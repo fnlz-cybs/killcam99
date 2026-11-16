@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="app/icon.svg" width="96" alt="Killcam '99 icon">
-
 # Killcam '99
 
 **Turns your Unreal Tournament (UT99) demos and gameplay recordings into kill clips, automatically.**
