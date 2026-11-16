@@ -1,0 +1,19 @@
+# Batch files must keep Windows line endings or cmd.exe misreads them
+*.bat   text eol=crlf
+*.txt   text eol=crlf
+
+# Source
+*.py    text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.svg   text eol=lf
+*.uc    text eol=crlf
+
+# Unreal packages and the base pack: binary, never touched by git
+*.u     binary
+*.uxx   binary
+*.unr   binary
+*.utx   binary
+*.uax   binary
+*.umx   binary
+app/packs/base/Cache/cache.ini  binary

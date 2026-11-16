@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Killcam '99</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<style>
+/* ===== Killcam '99: a plain, light desktop-app look (think 2010): white panels on grey,
+   soft gradients, rounded buttons, one blue accent. ===== */
+:root{
+  --page:#e4e7eb;--panel:#ffffff;--soft:#f6f7f9;--line:#c9ced6;--line2:#dde1e6;
+  --txt:#222;--dim:#5d6470;--dim2:#7c8390;--ink:#fff;
+  --blue:#2f6fc0;--blue2:#4b8ad6;--blue-lo:#245a9e;
+  --demo:#3a78c9;--rec:#3c9a4e;--clip:#c58a12;--lib:#2a93a3;
+  --ok:#2e8b3e;--warn:#b7791f;--bad:#c0392b;
+  --ui:"Segoe UI",Tahoma,Arial,sans-serif;--mono:Consolas,"Courier New",monospace;
+  font:13px/1.5 var(--ui);color:var(--txt);background:var(--page);color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;padding-bottom:40px;overflow-x:hidden;background:var(--page)}
+::selection{background:#bcd5f5}
+:focus-visible{outline:2px solid var(--blue2);outline-offset:1px}
+svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+[hidden]{display:none!important}
+body:not(.dev) .dev{display:none!important}
+a{color:var(--blue)}
+.mono{font-family:var(--mono);font-size:12px}.dim{color:var(--dim)}.dim2{color:var(--dim2)}
+kbd{font:600 11px/1 var(--mono);padding:2px 5px;border:1px solid #bbb;border-bottom-width:2px;border-radius:3px;background:#f7f7f7;color:#333}
+
+/* ---- controls ---- */
+button{font:inherit;color:#333;cursor:pointer;border:1px solid #b9bec6;border-radius:3px;background:linear-gradient(#fff,#e9ecef);
+  padding:4px 12px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-shadow:0 1px 1px #0000000d}
+button:hover{background:linear-gradient(#fff,#dfe3e8);border-color:#a3a9b2}
+button:active{background:linear-gradient(#e2e5e9,#f3f4f6);box-shadow:inset 0 1px 2px #0002}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.primary{color:#fff;font-weight:600;border-color:var(--blue-lo);background:linear-gradient(var(--blue2),var(--blue));text-shadow:0 -1px 0 #0003}
+button.primary:hover{background:linear-gradient(#5b98e0,#2a66b3)}
+button.primary:active{background:linear-gradient(var(--blue),var(--blue2))}
+button.ghost{background:transparent;border-color:transparent;box-shadow:none;color:var(--dim)}
+button.ghost:hover{background:#0000000a;border-color:#d0d4da;color:#222}
+button.danger{color:var(--bad)}button.danger:hover{background:linear-gradient(#fff,#f6dede);border-color:#d49a94}
+button.small{padding:2px 9px;font-size:12px}
+input,select{font:inherit;color:var(--txt);background:#fff;border:1px solid #b9bec6;border-radius:3px;padding:4px 7px;box-shadow:inset 0 1px 2px #0000000f}
+input:focus,select:focus{border-color:var(--blue2);outline:none;box-shadow:0 0 0 2px #4b8ad633}
+input[type=number]{width:76px}
+input[type=checkbox],input[type=radio]{width:14px;height:14px;accent-color:var(--blue);margin:0;box-shadow:none}
+
+/* ---- top bar ---- */
+.menubar{position:sticky;top:0;z-index:20;height:42px;display:flex;align-items:stretch;padding:0 10px;
+  background:linear-gradient(#4d5866,#343d48);border-bottom:1px solid #1f252c;box-shadow:0 1px 3px #0003}
+.mi{position:relative;border:0;border-radius:0;background:transparent;box-shadow:none;color:#e3e7ec;padding:0 14px;font-size:13.5px}
+.mi:hover{background:#ffffff14;color:#fff}
+.mi.on{background:linear-gradient(#f2f4f6,#e4e7eb);color:#222;font-weight:600;border-radius:4px 4px 0 0;margin-top:6px;border:1px solid #1f252c;border-bottom:0}
+.mi .dot{display:none}
+.mi .badge{background:#d9534f;color:#fff;border-radius:9px;padding:0 6px;font-size:11px;font-weight:600;line-height:16px}
+.mi.util{color:#c9d0d8}
+.msep{width:1px;margin:10px 6px;background:#ffffff26}
+.spacer{flex:1}
+.menubar>.ghost{align-self:center;color:#e3e7ec}.menubar>.ghost:hover{background:#ffffff14;border-color:transparent;color:#fff}
+#healthbtn .dot{width:9px;height:9px;border-radius:50%}
+
+/* ---- banners ---- */
+.banner{max-width:1360px;margin:12px auto 0;padding:0 16px;display:flex;flex-direction:column;gap:8px}
+.banner:empty{display:none}
+.banner div{display:flex;gap:10px;align-items:center;padding:8px 12px;border-radius:4px;background:#fcf8e3;border:1px solid #f0dca8;color:#6d5413}
+.banner div.bad{background:#f9e5e3;border-color:#e6b9b4;color:#8a2a20}.banner div span{flex:1}
+
+/* ---- pages as panels ---- */
+main{max-width:1360px;margin:0 auto;padding:16px}
+.win{display:none;background:var(--panel);border:1px solid var(--line);border-radius:5px;box-shadow:0 1px 3px #0000001a}
+.win.on{display:block}
+.titlebar{display:flex;align-items:baseline;gap:8px;padding:12px 18px 10px;border-bottom:1px solid var(--line2);border-radius:5px 5px 0 0;
+  background:linear-gradient(#fdfdfd,#f1f3f5);font-size:18px;font-weight:600;color:#222}
+.titlebar .count{font-size:13px;font-weight:400;color:var(--dim)}
+.titlebar .tb{display:none}
+.client{padding:16px 18px 20px}
+.lead{color:var(--dim);margin:0 0 14px;max-width:86ch}
+
+/* tabs inside a page */
+.ptabs{display:flex;gap:4px;padding:8px 14px 0;background:var(--soft);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.ptab{border:1px solid transparent;border-bottom:0;border-radius:4px 4px 0 0;background:transparent;box-shadow:none;color:var(--dim);padding:5px 14px;margin-bottom:-1px}
+.ptab:hover{color:#222;background:#0000000a}
+.ptab.on{background:#fff;color:#222;font-weight:600;border-color:var(--line)}
+.ptab .n{margin-left:5px;background:#d9534f;color:#fff;border-radius:9px;padding:0 6px;font-size:11px}
+.ptab .n:empty{display:none}
+.page{display:none}.page.on{display:block}
+
+/* ---- blocks inside pages ---- */
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--soft);border:1px solid var(--line2);border-radius:4px;padding:3px 4px 3px 10px;max-width:100%}
+.chip>svg{color:var(--dim)}
+.chip .path{font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:560px}
+.actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:16px}
+.act{background:var(--soft);border:1px solid var(--line2);border-radius:5px;padding:14px 16px;display:flex;gap:14px;align-items:flex-start}
+.act.main{background:linear-gradient(#f3f8fe,#e8f1fb);border-color:#bcd2ee}
+.act .ic{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;background:#fff;border:1px solid var(--line2);color:var(--dim);flex:none}
+.act.main .ic{color:var(--blue)}
+.act .ic svg{width:19px;height:19px}
+.act h3{margin:0 0 2px;font-size:16px;font-weight:600}
+.act p{margin:0 0 10px;color:var(--dim);font-size:12.5px}.act .meta{font-size:12px;color:var(--dim2);margin-top:8px}
+.act .body{flex:1;min-width:0}.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid #b9bec6;border-radius:3px;overflow:hidden;flex-wrap:wrap;background:linear-gradient(#fff,#eceef1)}
+.seg button{border:0;border-right:1px solid #d3d7dc;border-radius:0;background:transparent;box-shadow:none;color:#444;padding:3px 10px}
+.seg button:last-child{border-right:0}
+.seg button:hover{background:#0000000a}
+.seg button.on{background:linear-gradient(#dfe3e8,#eef0f3);box-shadow:inset 0 1px 2px #0002;color:#111;font-weight:600}
+.seg button .n{color:var(--dim2);margin-left:4px;font-weight:400}
+.search{width:250px}
+
+/* ---- tables ---- */
+.tablewrap{background:#fff;border:1px solid var(--line);border-radius:4px;overflow:auto}
+table{width:100%;border-collapse:collapse}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #e8eaed;vertical-align:top}
+th{position:sticky;top:0;z-index:1;font-weight:600;font-size:12.5px;color:#444;background:linear-gradient(#fafbfc,#eceef1);border-bottom:1px solid var(--line);user-select:none;white-space:nowrap}
+th.sort{cursor:pointer}th.sort:hover{color:var(--blue)}
+tbody tr:nth-child(even){background:#f8f9fa}tbody tr:hover{background:#eef4fc}
+tr.sel,tbody tr.sel:nth-child(even){background:#e1ecfa}
+tr.missing td{background:#fbeeec}
+td.cb,th.cb{width:34px}td.when{white-space:nowrap}td.when small{display:block;color:var(--dim2)}
+.guid{font-family:var(--mono);font-size:11.5px;color:var(--dim);user-select:all}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:0 7px;border-radius:9px;font-size:11.5px;line-height:18px;border:1px solid #cfd3d9;white-space:nowrap;color:#555;background:#f1f2f4}
+.pill.ok{color:#256d32;border-color:#b9dcbf;background:#e7f4e9}.pill.todo{color:#7a5a12;border-color:#ecd89b;background:#fcf5dd}
+.pill.bad{color:#9a2d22;border-color:#e6b9b4;background:#f9e5e3}.pill.blue{color:#2a5d9e;border-color:#bcd2ee;background:#e8f0fb}
+button.pill{cursor:pointer;box-shadow:none}button.pill.bad:hover{background:#f2d3cf}
+.moments{display:flex;flex-wrap:wrap;gap:5px}
+.mom{font-size:12px;padding:1px 7px;border:1px solid #cfd3d9;border-radius:3px;background:#fff;display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.mom:hover{border-color:var(--blue2)}
+.mom b{font-weight:600;color:#333}
+.mom .t{color:var(--dim2);font-family:var(--mono);font-size:11px}
+.mom.done b{color:var(--dim2);font-weight:400}.mom.done .ok{color:var(--ok)}
+.mom.picked{border-color:var(--blue);background:#e1ecfa}
+.mom .pk{width:13px;height:13px;border:1px solid #9aa1ab;border-radius:2px;background:#fff;display:inline-grid;place-items:center;font-size:10px;line-height:1}
+.mom.picked .pk{background:var(--blue);border-color:var(--blue);color:#fff}
+.mom .eye{display:inline-grid;place-items:center;margin-left:2px;padding:1px 3px;border-radius:2px;color:var(--dim2)}.mom .eye:hover{background:#e4e7eb;color:#222}.mom .eye svg{width:14px;height:14px}
+.selbar{position:sticky;top:50px;z-index:5;display:none;align-items:center;gap:10px;background:#e8f0fb;border:1px solid #bcd2ee;border-radius:4px;padding:6px 12px;margin-bottom:10px;box-shadow:0 2px 6px #0000001a}
+#msel{background:#fcf5dd;border-color:#ecd89b}
+.selbar.on{display:flex}
+.empty{padding:40px;text-align:center;color:var(--dim)}
+
+/* ---- clips ---- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px}
+.clip{background:#fff;border:1px solid var(--line);border-radius:5px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 1px 2px #0000000f}
+.clip.kept{border-color:#8cc597;box-shadow:0 0 0 1px #b9dcbf}.clip.rejected{opacity:.5}
+.clip video{width:100%;aspect-ratio:16/9;background:#000;display:block}
+.clip .b{padding:8px 12px 4px;display:flex;flex-direction:column;gap:1px}
+.clip .cat{color:var(--dim);font-size:11.5px;font-weight:600}
+.clip .t{font-size:15px;font-weight:600}
+.clip .m{color:var(--dim2);font-size:12px;overflow-wrap:anywhere}.clip .w{color:var(--bad);font-size:12px}.clip .q{color:var(--dim);font-size:12px}
+.clip .a{display:flex;gap:8px;padding:8px 12px 12px;margin-top:auto}.clip .a button{flex:1;justify-content:center}
+.noplay{aspect-ratio:16/9;display:grid;place-items:center;background:#2b2f35;color:#ccc}
+
+/* ---- options / help groups ---- */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}
+.card{background:#fff;border:1px solid var(--line2);border-radius:5px;padding:0 14px 10px}
+.card>h3:first-child{margin:0 -14px 8px;padding:8px 14px;font-size:14px;font-weight:600;background:linear-gradient(#fafbfc,#f0f2f4);border-bottom:1px solid var(--line2);border-radius:5px 5px 0 0}
+.card h3{margin:14px 0 4px;font-size:14px;font-weight:600}
+.card .sub{color:var(--dim);font-size:12.5px;margin:0 0 6px}
+.row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #eef0f2}.row:first-of-type{border-top:0}
+.row label{flex:1}.row .hint{display:block;color:var(--dim2);font-size:12px}
+.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px 14px;margin:6px 0 10px}
+.checks label{display:flex;gap:8px;align-items:center;cursor:pointer}
+.grp{font-weight:600;color:#444;margin-top:10px;padding-bottom:2px}
+.health .row{gap:12px}.st{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;flex:none;color:#fff}
+.st.ok{background:var(--ok)}.st.warn{background:var(--warn)}.st.bad{background:var(--bad)}
+.st svg{width:12px;height:12px;stroke-width:3}
+.statgrid{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.stat{background:var(--soft);border:1px solid var(--line2);border-radius:4px;padding:6px 14px 7px;min-width:120px}
+.stat b{display:block;font-size:22px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
+.stat span{color:var(--dim);font-size:12px}
+.stat.bad b{color:var(--bad)}
+.places{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.place{display:flex;align-items:center;gap:12px;background:var(--soft);border:1px solid var(--line2);border-radius:4px;padding:7px 12px}
+.place .no{width:22px;height:22px;border-radius:50%;background:#dfe3e8;color:#444;display:grid;place-items:center;font-weight:600;font-size:12px;flex:none}
+.place .what{flex:1;min-width:0}.place .what b{font-weight:600}
+.place .what .mono{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)}
+.place .cnt{color:var(--dim);white-space:nowrap}
+details.demos summary{cursor:pointer;color:var(--blue)}details.demos div{color:var(--dim);font-size:12px;max-width:340px;overflow-wrap:anywhere;white-space:pre-line}
+
+/* ---- status bar ---- */
+footer{position:fixed;left:0;right:0;bottom:0;z-index:30;height:34px;display:flex;align-items:center;gap:10px;padding:0 10px;
+  background:linear-gradient(#f4f5f7,#e3e6ea);border-top:1px solid #b9bec6}
+#help{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)}
+#job{display:flex;align-items:center;gap:9px;min-width:0;max-width:60%}
+#job .title{font-weight:600;white-space:nowrap}
+#job .step{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.prog{width:180px;height:12px;border-radius:6px;background:#dfe3e8;border:1px solid #b9bec6;overflow:hidden;flex:none;box-shadow:inset 0 1px 2px #0002}
+.prog i{display:block;height:100%;width:0;transition:width .4s;background:linear-gradient(#6aa6e8,var(--blue))}
+.prog.ind i{width:35%;animation:ind 1.3s infinite ease-in-out}@keyframes ind{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+.spin{width:14px;height:14px;border:2px solid #c9ced6;border-top-color:var(--blue);border-radius:50%;animation:sp .8s linear infinite;flex:none}@keyframes sp{to{transform:rotate(360deg)}}
+button.spinning svg{animation:sp .8s linear infinite}
+
+/* ---- console (log panel, slides down from the top) ---- */
+#console{position:fixed;left:0;right:0;top:0;z-index:45;height:46vh;display:flex;flex-direction:column;background:#26292e;border-bottom:1px solid #111;
+  box-shadow:0 4px 16px #0005;transform:translateY(-102%);transition:transform .2s ease-out}
+#console.open{transform:none}
+#console .chead{display:flex;align-items:center;gap:10px;padding:5px 12px;background:#33373d;color:#ddd;font-weight:600}
+#console .chead button{color:#ddd}#console .chead button:hover{background:#ffffff14;border-color:transparent;color:#fff}
+#console kbd{background:#444;color:#ddd;border-color:#555}
+#log{flex:1;overflow:auto;margin:0;padding:8px 14px;font:12.5px/1.5 var(--mono);white-space:pre-wrap;word-break:break-word;color:#d6d6d6}
+#log:empty::before{content:"No job has run since Killcam '99 opened. Its messages show up here.";color:#8a8f96}
+#console .prompt{display:none}
+#log .e{color:#ff8a7a}#log .w{color:#e8c46a}#log .g{color:#8fd694}#log .h{color:#fff;font-weight:700}
+
+/* ---- dialogs ---- */
+.modal{position:fixed;inset:0;background:#0007;z-index:50;display:none;align-items:center;justify-content:center;padding:20px}
+.modal.on{display:flex}
+.dlg{background:#fff;max-width:560px;width:100%;max-height:calc(100vh - 40px);display:flex;flex-direction:column;border-radius:6px;border:1px solid #9aa1ab;box-shadow:0 10px 40px #0005}
+.dlg.wide{max-width:1100px}.dlg.wiz{max-width:760px}
+.dlg .titlebar{flex:none;font-size:16px}
+.dlg .dbody{padding:14px 20px 4px;overflow:auto}
+.dlg .dbody p{color:var(--dim);margin:6px 0}
+.dlg .btns{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 20px 14px;flex:none;border-top:1px solid var(--line2);background:var(--soft);border-radius:0 0 6px 6px}
+.dlg .btns .left{margin-right:auto}
+
+/* setup wizard */
+.steps{display:flex;gap:4px;padding:8px 14px 0;background:var(--soft);border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap}
+.steps span{padding:5px 12px;color:var(--dim2);border:1px solid transparent;border-bottom:0;border-radius:4px 4px 0 0;margin-bottom:-1px}
+.steps span.on{color:#222;font-weight:600;background:#fff;border-color:var(--line)}
+.steps span.done{color:var(--dim)}
+.steps span b{margin-right:5px}
+.wz h4{margin:4px 0 6px;font-size:17px;font-weight:600}
+.choice{display:flex;gap:12px;align-items:flex-start;padding:10px 12px;margin-bottom:8px;cursor:pointer;background:#fff;border:1px solid var(--line2);border-radius:5px}
+.choice:hover{border-color:#a8c3e6}
+.choice.on{border-color:var(--blue2);background:#f1f6fd;box-shadow:0 0 0 1px #4b8ad633}
+.choice input{margin-top:4px}
+.choice b{font-weight:600;font-size:14px}
+.choice .p{color:var(--dim);font-size:12.5px;margin-top:2px}
+.choice ul{margin:6px 0 0;padding-left:18px;color:var(--dim);font-size:12.5px}
+.choice .facts{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;font-weight:600;color:#444;font-size:12.5px}
+.verdict{padding:8px 12px;margin:8px 0;border-radius:4px;border:1px solid #b9dcbf;background:#e7f4e9;color:#256d32}
+.verdict.bad{border-color:#e6b9b4;background:#f9e5e3;color:#8a2a20}
+.frow{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #eef0f2}.frow:first-of-type{border-top:0}
+.frow .l{flex:1;min-width:0}.frow .l b{display:block;font-weight:600}
+.frow .l .mono{display:block;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- notices ---- */
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:46px;z-index:60;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+#toast div{background:#333a43;color:#fff;padding:7px 14px;border-radius:4px;box-shadow:0 3px 10px #0004;animation:tin .2s}
+#toast div.bad{background:#a83226}
+@keyframes tin{from{transform:translateY(6px);opacity:0}}
+#hud{display:none}
+
+@media (max-width:900px){.menubar{overflow-x:auto}.mi{padding:0 9px}.grid,.cards{grid-template-columns:1fr}.search{width:100%}.prog{width:80px}#job{max-width:70%}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}
+  .spin{animation:sp 2s linear infinite!important}}
+</style></head><body>
+
+<header class="menubar">
+  <button class="mi on" data-tab="demos" style="--c:var(--demo)" data-help="Your demos: find the kills, pick the moments, record them as clips. (key 1)"><span class="dot"></span>Demos <span class="badge" id="b-demos" hidden></span></button>
+  <button class="mi" data-tab="recs" style="--c:var(--rec)" data-help="Your OBS / Streamlabs recordings: clips are cut from the on-screen kill messages. (key 2)"><span class="dot"></span>Recordings <span class="badge" id="b-recs" hidden></span></button>
+  <button class="mi" data-tab="clips" style="--c:var(--clip)" data-help="Watch your clips, keep the good ones, reject the rest. (key 3)"><span class="dot"></span>Clips <span class="badge" id="b-clips" hidden></span></button>
+  <button class="mi" data-tab="packages" style="--c:var(--lib)" data-help="The maps, mods and textures your demos need, where they are, and what is missing. (key 4)"><span class="dot"></span>Packages <span class="badge" id="b-lib" hidden></span></button>
+  <span class="msep" aria-hidden="true"></span>
+  <button class="mi util" data-tab="options" data-help="What makes a clip, clip length, speed, sound, folders and the game setup. (key 5)">Options</button>
+  <button class="mi util" data-tab="help" data-help="System check, keys, the log and About. (key 6)">Help</button>
+  <div class="spacer"></div>
+  <button class="ghost" id="healthbtn" data-help="Is everything Killcam '99 needs in place? Click for the system check."><span class="dot" id="healthdot"></span><span id="healthtxt">Checking ...</span></button>
+  <button class="ghost" id="quit" data-help="Close Killcam '99 (a running job is stopped)."><svg viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>Quit</button>
+</header>
+<div class="banner" id="banner"></div>
+
+<main>
+<!-- ============================ DEMOS ============================ -->
+<section class="win on" id="tab-demos">
+  <div class="titlebar">Demos <span class="count" id="wt-demos"></span><span class="tb" aria-hidden="true"><i></i><i></i></span></div>
+  <div class="client">
+  <div class="bar">
+    <span class="chip" data-help="The folder Killcam '99 reads your demos from. It is only read."><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="path" id="demofolder">...</span>
+      <button class="small" data-pick="demo">Change</button><button class="small ghost" data-open="demos">Open</button></span>
+  </div>
+  <div class="actions">
+    <div class="act main"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/></svg></div>
+      <div class="body"><h3>Make clips</h3><p>Finds the kills in new demos, then records only the moments worth a clip.</p>
+      <button class="primary" id="go-clips" data-help="Find the kills in every new demo, then record each moment worth a clip. Runs in the background; every sound your PC plays ends up in the clips.">Make clips from new demos</button><div class="meta" id="clips-meta"></div></div></div>
+    <div class="act"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div>
+      <div class="body"><h3>Find kills</h3><p>Fast, nothing is recorded. Shows the moments per demo, so you can pick which to record.</p>
+      <div class="btnrow"><button id="go-scan" data-help="Play the new demos fast to find the kills. Nothing is recorded.">Find kills in new demos</button><button id="go-rescan" data-help="Look for kills in every demo again, also the ones done before.">Find kills in all demos again</button></div><div class="meta" id="scan-meta"></div></div></div>
+  </div>
+  <div class="bar">
+    <input class="search" id="dq" placeholder="Search map or file name" data-help="Type part of a map or file name to narrow the list.">
+    <div class="seg" id="dfilter"></div>
+    <div class="spacer"></div><span class="dim2" id="dcount"></span>
+    <button class="small ghost" data-refresh="demos" data-help="Read the demo folder and the results again."><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Refresh</button>
+  </div>
+  <div class="selbar" id="dsel"><b id="dseln"></b>
+    <button class="primary small" id="sel-clips">Make clips</button><button class="small" id="sel-scan">Find kills again</button><button class="small" id="sel-remove" data-help="Take the selected demos off the list. The .dem files stay where they are.">Remove from list</button>
+    <div class="spacer"></div><button class="small ghost" id="sel-clear">Clear selection</button></div>
+  <div class="selbar" id="msel"><b id="mseln"></b><span class="dim" id="mseldone"></span>
+    <button class="primary small" id="msel-rec">Record these moments</button>
+    <div class="spacer"></div><button class="small ghost" id="msel-clear">Clear</button></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th class="cb"><input type="checkbox" id="dall" title="Select all shown"></th><th class="sort" data-sort="when">Recorded</th><th class="sort" data-sort="map">Map</th><th class="sort" data-sort="length">Length</th>
+      <th data-help="Click a moment to pick it for recording; the eye plays it in the game.">Moments worth a clip</th><th class="sort" data-sort="status">Status</th><th></th></tr></thead>
+    <tbody id="dbody"><tr><td colspan="7" class="empty">Loading ...</td></tr></tbody></table></div>
+  </div>
+</section>
+
+<!-- ============================ RECORDINGS ============================ -->
+<section class="win" id="tab-recs">
+  <div class="titlebar">Recordings <span class="count" id="wt-recs"></span><span class="tb" aria-hidden="true"><i></i><i></i></span></div>
+  <div class="client">
+  <div class="bar">
+    <span class="chip" data-help="The folder with your OBS / Streamlabs recordings. It is only read."><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="path" id="recfolder">...</span>
+      <button class="small" data-pick="obs">Change</button><button class="small ghost" data-open="recordings">Open</button></span>
+  </div>
+  <div class="actions">
+    <div class="act main"><div class="ic"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4z"/></svg></div>
+      <div class="body"><h3>Make clips from recordings</h3><p>Reads the kill messages from the picture of each new recording and cuts the clips. The game is not needed; it takes about a quarter of the recording's length.</p>
+      <div class="btnrow"><button class="primary" id="go-obs" data-help="Read every new recording and cut its clips.">Make clips from new recordings</button><button id="go-obsrescan" data-help="Read every recording again from scratch and cut its clips again.">Read all again</button></div><div class="meta" id="obs-meta"></div></div></div>
+    <div class="act dev"><div class="ic"><svg viewBox="0 0 24 24"><path d="M2 12h3l3-8 4 16 3-8h7"/></svg></div>
+      <div class="body"><h3>Compare with the demos</h3><p>Developer check: where a demo of the same match exists, lists what the demo has and what was read from the screen.</p>
+      <button id="go-obsdebug">Compare with demos</button></div></div>
+  </div>
+  <div class="bar">
+    <label class="dim" data-help="Your name in the game, so only your kills count. Leave empty to detect it.">Your player name <input class="search" style="width:180px" data-setting="player" placeholder="automatic"></label>
+    <label class="dim" style="display:flex;gap:7px;align-items:center" data-help="Cuts start exactly on the right frame, but take longer.">
+      <input type="checkbox" data-setting="obs_reencode"> Exact cuts (slower)</label>
+    <div class="spacer"></div><input class="search" id="rq" placeholder="Search recordings"><span class="dim2" id="rcount"></span>
+    <button class="small ghost" data-refresh="recs" data-help="Look at the recordings folder again."><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Refresh</button>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Recorded</th><th>File</th><th>Size</th><th>Status</th><th></th></tr></thead>
+    <tbody id="rbody"><tr><td colspan="5" class="empty">Loading ...</td></tr></tbody></table></div>
+  </div>
+</section>
+
+<!-- ============================ CLIPS ============================ -->
+<section class="win" id="tab-clips">
+  <div class="titlebar">Clips <span class="count" id="wt-clips"></span><span class="tb" aria-hidden="true"><i></i><i></i></span></div>
+  <div class="client">
+  <p class="lead">Keep the good ones, reject the rest. Rejected clips move to the <span class="mono">rejected</span> folder; Restore puts them back.</p>
+  <div class="statgrid" id="cstats"></div>
+  <div class="bar">
+    <div class="seg" id="ccat"></div>
+    <select id="cstate" data-help="Which clips to show."><option value="open">Not rejected</option><option value="new">Not reviewed yet</option><option value="kept">Kept</option><option value="warn">With a warning</option><option value="rejected">Rejected</option><option value="all">Everything</option></select>
+    <select id="csrc" data-help="Clips made from demos, from recordings, or both."><option value="all">From demos and recordings</option><option value="demo">From demos</option><option value="obs">From recordings</option></select>
+    <div class="spacer"></div>
+    <button class="small" data-open="all_clips" data-help="Open the Clips folder: Demos, Recordings and Rejected are inside.">Open clips folder</button>
+    <button class="small ghost" data-refresh="clips" data-help="Look for new clips."><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Refresh</button>
+  </div>
+  <div class="grid" id="cgrid"></div>
+  </div>
+</section>
+
+<!-- ============================ PACKAGES ============================ -->
+<section class="win" id="tab-packages">
+  <div class="titlebar">Packages <span class="count" id="wt-packages"></span><span class="tb" aria-hidden="true"><i></i><i></i></span></div>
+  <div class="ptabs" data-pages="pk">
+    <button class="ptab on" data-page="pk-missing" data-help="Package versions your demos need that none of the places has.">Missing<span class="n" id="pk-nmiss"></span></button>
+    <button class="ptab" data-page="pk-places" data-help="Where Killcam '99 looks for packages, in order.">Where to look</button>
+    <button class="ptab" data-page="pk-all" data-help="Every package version Killcam '99 knows about.">All packages</button>
+  </div>
+  <div class="client">
+  <div class="statgrid" id="lstats"></div>
+  <div class="page on" id="pk-missing">
+    <p class="lead">A demo only plays with the exact version (GUID) of every map, mod and texture the server used. These versions are in none of the places Killcam '99 looks. Search online, or add a folder that has them.</p>
+    <div class="bar"><button class="primary" id="go-fetch" data-help="Look on UT redirect servers, in the Wayback Machine and in mod releases. Only the exact version is kept.">Search online for all missing</button>
+      <button id="go-addsrc2" data-help="Add a folder that has these packages: another UT install, a map collection or a cache folder.">Add a folder that has them</button>
+      <div class="spacer"></div><span class="dim2" id="lmiss-count"></span></div>
+    <div class="tablewrap"><table><thead><tr><th>Package</th><th>Version (GUID)</th><th>Size</th><th title="Generation: how often the package was saved">Gen</th><th>Needed by</th><th>Other versions you have</th><th>Online</th><th></th></tr></thead>
+      <tbody id="lmiss"><tr><td colspan="8" class="empty">Loading ...</td></tr></tbody></table></div>
+  </div>
+  <div class="page" id="pk-places">
+    <p class="lead">When a demo needs a package, Killcam '99 takes the exact version from the first place that has it and copies only that one into the game's Cache. These places are only read.</p>
+    <div class="places" id="lplaces"></div>
+    <div class="bar"><button class="primary" id="go-libbuild" data-help="Read every place again: new demos, new packages, folders that changed.">Refresh packages</button>
+      <button id="go-addsrc" data-help="Another UT install, a map collection or a cache folder. It is only read.">Add a folder</button>
+      <div class="spacer"></div><span class="dim2" id="lib-meta"></span></div>
+  </div>
+  <div class="page" id="pk-all">
+    <div class="bar">
+      <input class="search" id="lq" placeholder="Search file name or GUID">
+      <div class="seg" id="ltype"></div><div class="seg" id="lkind"></div>
+      <div class="spacer"></div>
+      <button class="small" data-open="library_csv" data-help="The whole list as a spreadsheet (UT_files.csv).">Open as spreadsheet</button>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th class="sort" data-lsort="0">File</th><th class="sort" data-lsort="1">Type</th><th class="sort" data-lsort="2">Kind</th><th class="sort" data-lsort="3">Size</th><th>Version (GUID)</th><th class="sort" data-lsort="5">Demos</th><th class="sort" data-lsort="6">Where</th></tr></thead>
+      <tbody id="lbody"><tr><td colspan="7" class="empty">Loading ...</td></tr></tbody></table></div>
+    <div class="dim2" id="lmore" style="margin:8px 2px"></div>
+  </div>
+  </div>
+</section>
+
+<!-- ============================ OPTIONS ============================ -->
+<section class="win" id="tab-options">
+  <div class="titlebar">Options <span class="count">changes are saved right away</span><span class="tb" aria-hidden="true"><i></i><i></i></span></div>
+  <div class="ptabs" data-pages="op">
+    <button class="ptab on" data-page="op-clips">Clips</button>
+    <button class="ptab" data-page="op-length">Length and output</button>
+    <button class="ptab" data-page="op-speed">Speed and sound</button>
+    <button class="ptab" data-page="op-folders">Folders</button>
+    <button class="ptab" data-page="op-game">Game</button>
+    <button class="ptab" data-page="op-app">App</button>
+  </div>
+  <div class="client">
+  <div class="page on" id="op-clips"><div class="cards">
+    <div class="card"><h3>What makes a clip</h3><p class="sub">Your own announcer calls. Multi kills are counted from your kills; sprees come from the server.</p>
+      <div class="grp">Multi kills</div><div class="checks" id="trg-multi"></div>
+      <div class="grp">Sprees</div><div class="checks" id="trg-spree"></div></div>
+    <div class="card"><h3>Combos</h3><p class="sub">A multi kill followed by a flag play makes one longer clip.</p>
+      <div class="row"><input type="checkbox" data-setting="return_on" id="s-ret"><label for="s-ret">Multi Kill or higher, then you return your flag<span class="hint">within the seconds on the right</span></label><input type="number" min="1" max="120" data-setting="return_window"> s</div>
+      <div class="row"><input type="checkbox" data-setting="capture_on" id="s-cap"><label for="s-cap">Multi Kill or higher, then you capture<span class="hint">within the seconds on the right</span></label><input type="number" min="1" max="180" data-setting="capture_window"> s</div>
+      <div class="row"><input type="checkbox" data-setting="carrier_kills" id="s-fc"><label for="s-fc">Multi Kill or higher in which you kill the enemy flag carrier</label></div></div>
+  </div></div>
+  <div class="page" id="op-length"><div class="cards">
+    <div class="card"><h3>Clip length</h3><p class="sub">Around the kill streak that leads to the call.</p>
+      <div class="row"><label>Before the streak<span class="hint">seconds of build-up</span></label><input type="number" min="0" max="60" step="0.5" data-setting="part_before"> s</div>
+      <div class="row"><label>After the last kill<span class="hint">or after the flag return or capture</span></label><input type="number" min="0" max="60" step="0.5" data-setting="part_after"> s</div>
+      <div class="row"><label>Settle time after a jump<span class="hint">played but not kept, so picture and sound are calm when the clip starts</span></label><input type="number" min="0" max="10" step="0.5" data-setting="settle"> s</div></div>
+    <div class="card"><h3>Output</h3><p class="sub">The clip files.</p>
+      <div class="row"><label>File type</label><select data-setting="format"><option value="mp4">MP4 (plays everywhere)</option><option value="mkv">MKV</option></select></div>
+      <div class="row"><label>Quality<span class="hint">High is like the recording; Normal is about half the size</span></label><select data-setting="clip_quality"><option value="high">High</option><option value="normal">Normal</option><option value="small">Small</option></select></div></div>
+  </div></div>
+  <div class="page" id="op-speed"><div class="cards">
+    <div class="card"><h3>Finding kills</h3><p class="sub">Demos are played fast without recording.</p>
+      <div class="row"><label>Demos at the same time<span class="hint" id="jobs-hint"></span></label><select data-setting="scan_jobs"><option value="0">Auto</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
+      <div class="row"><label>Speed<span class="hint">times real time per demo; every message is still read</span></label><input type="number" min="5" max="100" step="5" data-setting="scan_speed"> x</div></div>
+    <div class="card"><h3>Sound while recording</h3><p class="sub">The device the game plays on.</p>
+      <div class="row"><label>Record sound from</label><select data-setting="audio_device" id="audiodev" style="max-width:260px"><option value="">Windows default output</option></select><button class="small ghost" id="audiorefresh">Look again</button></div></div>
+  </div></div>
+  <div class="page" id="op-folders"><div class="cards">
+    <div class="card"><h3>Folders</h3><p class="sub">Demos and recordings are only read.</p>
+      <div class="row"><label>Demos<span class="hint mono" id="s-demofolder"></span></label><button class="small" data-pick="demo">Change</button></div>
+      <div class="row"><label>Recordings<span class="hint mono" id="s-recfolder"></span></label><button class="small" data-pick="obs">Change</button></div>
+      <div class="row"><label>Clips are saved in<span class="hint mono" id="s-outfolder"></span></label><button class="small" data-pick="out_now">Change</button><button class="small ghost" data-open="all_clips">Open</button></div></div>
+    <div class="card"><h3>Housekeeping</h3><p class="sub">Temporary recordings are kept until a clip is cut.</p>
+      <div class="row"><label>Delete temporary files<span class="hint" id="worksize"></span></label><button id="clean">Delete</button></div></div>
+  </div></div>
+  <div class="page" id="op-game"><div class="cards">
+    <div class="card"><h3>Unreal Tournament</h3><p class="sub" id="g-sub"></p>
+      <div class="row"><label>Game folder in use<span class="hint mono" id="g-folder"></span></label><button class="small ghost" data-open="game">Open</button></div>
+      <div class="row" id="g-src-row"><label>Copied from<span class="hint mono" id="g-src"></span></label></div>
+      <div class="row"><label>Run the setup again<span class="hint">choose another UT folder, or switch between a copy and your own folder</span></label><button class="primary small" id="g-wizard">Open setup</button></div>
+      <div class="row"><label id="g-upd">Update<span class="hint" id="g-upd-hint"></span></label><button class="small" id="g-setup">Update</button></div></div>
+    <div class="card"><h3>Undo</h3><p class="sub">Take Killcam '99 out of your game again.</p>
+      <div class="row" id="g-undo-row"><label>Remove from my UT folder<span class="hint" id="g-undo-hint"></span></label><button class="small danger" id="g-undo">Remove</button></div>
+      <div class="row" id="g-del-row"><label>Delete the separate copy<span class="hint">frees the space it takes; your own UT is not touched</span></label><button class="small danger" id="g-delcopy">Delete</button></div></div>
+  </div></div>
+  <div class="page" id="op-app"><div class="cards">
+    <div class="card"><h3>This app</h3><p class="sub">How Killcam '99 itself behaves.</p>
+      <div class="row"><input type="checkbox" data-setting="open_as_app" id="s-app"><label for="s-app">Open in its own window<span class="hint">without browser tabs and address bar (Microsoft Edge)</span></label></div>
+      <div class="row"><input type="checkbox" data-setting="notify" id="s-not"><label for="s-not">Desktop notification when a job is done</label></div>
+      <div class="row"><input type="checkbox" data-setting="dev_mode" id="s-dev"><label for="s-dev">Developer tools<span class="hint">extra checks that compare detection methods</span></label></div>
+      <div class="row"><label>Back to the standard options<span class="hint">your folders and game setup are kept</span></label><button class="small danger" id="reset">Reset</button></div></div>
+    <div class="card dev"><h3>Developer tools</h3><p class="sub">For testing the detection.</p>
+      <div class="row"><label>Compare scans with the sound detection</label><button class="small" data-job="validate">Run</button></div></div>
+  </div></div>
+  </div>
+</section>
+
+<!-- ============================ HELP ============================ -->
+<section class="win" id="tab-help">
+  <div class="titlebar">Help <span class="tb" aria-hidden="true"><i></i><i></i></span></div>
+  <div class="client"><div class="cards">
+    <div class="card health"><h3>System check</h3><p class="sub">Everything Killcam '99 needs.</p><div id="hlist"></div></div>
+    <div class="card"><h3>Keys</h3><p class="sub">Anywhere in the app, unless you are typing.</p>
+      <div class="row"><label><kbd>1</kbd> to <kbd>6</kbd></label><span class="dim">Demos, Recordings, Clips, Packages, Options, Help</span></div>
+      <div class="row"><label><kbd>`</kbd></label><span class="dim">open or close the console, as in the game</span></div>
+      <div class="row"><label><kbd>Esc</kbd> / <kbd>Enter</kbd></label><span class="dim">cancel or confirm a dialog</span></div>
+      <h3>Drop files on Killcam99.bat</h3><p class="sub">Demos are turned into clips; recordings are read for clips. The window does not have to be open.</p></div>
+    <div class="card"><h3>About</h3><p class="sub" id="about"></p>
+      <p class="sub">Not made by or affiliated with Epic Games. You need your own copy of Unreal Tournament with the OldUnreal 469 patch.</p>
+      <div class="row"><label>Copy diagnostics<span class="hint">versions, folders, checks and the end of the log, for a bug report</span></label><button class="small" id="diag">Copy</button></div>
+      <div class="row"><label>Log file</label><button class="small" data-open="log">Open</button></div>
+      <div class="row"><label>Killcam '99 folder</label><button class="small" data-open="app">Open</button></div></div>
+  </div></div>
+</section>
+</main>
+
+<footer>
+  <div id="help">Ready.</div>
+  <div id="job"></div>
+  <button class="small" id="conbtn" data-help="The console with every message of the running job. The ` key opens and closes it too.">Console</button>
+</footer>
+<div id="console" aria-label="Console"><div class="chead">Console<span class="spacer"></span><button class="small ghost" id="conclose">Close <kbd>`</kbd></button></div><pre id="log"></pre><div class="prompt">&gt; </div></div>
+<div class="modal" id="modal"><div class="dlg" id="dlg"></div></div>
+<div class="modal" id="pmodal"><div class="dlg wide" id="pdlg"></div></div>
+<div class="modal" id="wmodal"><div class="dlg wiz" id="wdlg"></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="hud" aria-hidden="true"></div>
+
+<script>
+const TOKEN="__TOKEN__";
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const el=(t,a={},...kids)=>{const e=document.createElement(t);for(const[k,v]of Object.entries(a)){if(k=="class")e.className=v;else if(k=="html")e.innerHTML=v;else if(k.startsWith("on"))e[k]=v;else if(v!==false&&v!=null)e.setAttribute(k,v===true?"":v)}for(const c of kids.flat())if(c!=null&&c!==false)e.append(c.nodeType?c:document.createTextNode(c));return e};
+const ICON={play:'<svg viewBox="0 0 24 24"><path d="m6 4 14 8-14 8z"/></svg>',folder:'<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+ check:'<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',x:'<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',warn:'<svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/></svg>',
+ stop:'<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>',eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+ cut:'<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/></svg>',
+ box:'<svg viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>',copy:'<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>'};
+const ic=n=>{const s=document.createElement("span");s.style.display="contents";s.innerHTML=ICON[n];return s};
+async function get(p){const r=await fetch(p);return r.json()}
+async function post(p,b={}){const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...b,token:TOKEN})});return r.json()}
+function toast(t,ms=2600,bad=false){const d=el("div",{class:bad?"bad":""},t);$("#toast").append(d);setTimeout(()=>d.remove(),ms)}
+const dur=s=>{if(s==null)return"?";s=Math.round(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(x).padStart(2,"0")}`:`${m}:${String(x).padStart(2,"0")}`};
+const fdate=t=>{if(!t)return["?",""];const d=new Date(t*1000);return[d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"}),d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})]};
+const size=b=>b>1e12?(b/1e12).toFixed(1)+" TB":b>1e9?(b/1e9).toFixed(1)+" GB":b>1e6?(b/1e6).toFixed(b>1e8?0:1)+" MB":(b/1e3).toFixed(0)+" KB";
+const plural=(n,w,ws)=>`${n} ${n==1?w:(ws||w+"s")}`;
+async function copyText(t,what){try{await navigator.clipboard.writeText(t);toast(`${what} copied`)}catch(e){toast("Could not copy: select the text and press Ctrl+C",4000,true)}}
+
+let S=null, DEMOS=null, RECS=null, CLIPS=null, JOB=null, logNext=0, jobId=null, tab="demos";
+const sel=new Set(); let dfilt="all", dsort=["when",-1], ccat="All";
+const TABS=["demos","recs","clips","packages","options","help"];
+const DEFHELP={demos:"Make clips finds the kills in new demos and records the moments worth a clip.",recs:"Clips from your OBS / Streamlabs recordings: no demo and no game needed.",
+ clips:"Watch a clip, then Keep or Reject it.",packages:"The exact map, mod and texture versions your demos need.",options:"Changes are saved right away and used by the next job.",help:"Press ` for the console, 1 to 6 to switch windows."};
+
+// ---------------- windows, page tabs, help line ----------------
+function show(t){tab=t;$$(".mi").forEach(b=>b.classList.toggle("on",b.dataset.tab==t));$$("main .win").forEach(s=>s.classList.toggle("on",s.id=="tab-"+t));
+ setHelp();if(t=="demos")loadDemos();if(t=="recs")loadRecs();if(t=="clips")loadClips();if(t=="options")fillSettings();if(t=="help")drawHealth();if(t=="packages")loadLib();history.replaceState(null,"","#"+t)}
+$$(".mi").forEach(b=>b.onclick=()=>show(b.dataset.tab));
+addEventListener("hashchange",()=>{const t=location.hash.slice(1);if(t!=tab&&TABS.includes(t))show(t)});
+$("#healthbtn").onclick=()=>show("help");
+function page(group,id){$$(`[data-pages="${group}"] .ptab`).forEach(b=>b.classList.toggle("on",b.dataset.page==id));
+ const box=$(`[data-pages="${group}"]`).parentElement;box.querySelectorAll(".page").forEach(p=>p.classList.toggle("on",p.id==id))}
+$$(".ptabs").forEach(pt=>pt.querySelectorAll(".ptab").forEach(b=>b.onclick=()=>page(pt.dataset.pages,b.dataset.page)));
+function setHelp(t){$("#help").textContent=t||DEFHELP[tab]||"Ready."}
+document.addEventListener("mouseover",e=>{const h=e.target.closest("[data-help]");setHelp(h?h.dataset.help:null)});
+document.addEventListener("focusin",e=>{const h=e.target.closest("[data-help]");if(h)setHelp(h.dataset.help)});
+
+// ---------------- state + health ----------------
+async function loadState(){S=await get("/api/state");document.body.classList.toggle("dev",!!S.settings.dev_mode);drawHealthBadge();drawBanner();drawBadges();drawGame();
+ if(tab=="help")drawHealth();if(tab=="options")fillSettings();
+ $("#demofolder").textContent=S.settings.demo_folder;$("#recfolder").textContent=S.settings.obs_folder;
+ $("#s-demofolder").textContent=S.settings.demo_folder;$("#s-recfolder").textContent=S.settings.obs_folder;$("#s-outfolder").textContent=S.clips;
+ $("#jobs-hint").textContent=`Auto = ${S.auto_jobs} on this PC (${S.cpu_threads} CPU threads); more uses more CPU`;
+ $("#worksize").textContent=`${size(S.health.work_bytes)} of temporary recordings`;
+ $("#about").textContent=`${S.app.name} ${S.app.version}. Turns Unreal Tournament demos and recordings into kill clips.`}
+function drawHealthBadge(){const c=S.health.checks;const bad=c.some(x=>!x.ok&&!x.warn&&x.fix),warn=c.some(x=>x.warn||(!x.ok&&!x.fix));
+ $("#healthdot").style.color=$("#healthdot").style.background=bad?"var(--bad)":warn?"var(--warn)":"var(--ok)";$("#healthtxt").textContent=bad?"Setup needed":warn?"Check setup":"All set"}
+function fixer(x){return x.fix=="wizard"?openWizard:x.fix=="setup"?()=>runJob("setup"):x.fix=="install"?()=>runJob("install"):null}
+function drawBanner(){const b=$("#banner");b.innerHTML="";const c=Object.fromEntries(S.health.checks.map(x=>[x.id,x]));
+ const add=(cls,txt,btn,fn)=>b.append(el("div",{class:cls},el("span",{},txt),btn?el("button",{class:"small",onclick:fn},btn):null));
+ if(S.code_changed)add("","Killcam '99 was updated after this window opened. Restart it to use the new version (takes a few seconds).","Restart now",restartApp);
+ if(!c.build.ok)add("bad","Unreal Tournament is not set up yet. Nothing can be found or recorded until it is.","Open setup",openWizard);
+ else if(c.hook.warn)add("","A newer kill detection add-on came with this version. Update it once.","Update",()=>runJob("setup"));
+ else if(!c.hook.ok)add("bad","The kill detection add-on is not in the game folder.","Put it in place",()=>runJob("setup"));
+ if(!c.ffmpeg.ok)add("bad","ffmpeg is missing: nothing can be recorded or cut.","Download ffmpeg",()=>runJob("install"))}
+function drawHealth(){if(!S)return;const h=$("#hlist");h.innerHTML="";for(const x of S.health.checks){const cls=x.ok&&!x.warn?"ok":(x.warn||!x.fix)?"warn":"bad";const f=fixer(x);
+ h.append(el("div",{class:"row"},el("span",{class:"st "+cls,html:cls=="ok"?ICON.check:cls=="warn"?ICON.warn:ICON.x}),el("label",{},x.label,el("span",{class:"hint"},x.detail)),
+ (!x.ok||x.warn)&&f?el("button",{class:"small",onclick:f},x.fix=="wizard"?"Open setup":x.fix=="setup"?"Update":"Download"):null))}}
+function drawBadges(){const n=S.clips_new;$("#b-clips").hidden=!n;$("#b-clips").textContent=n+" new"}
+function drawGame(){const g=S.game;const copy=g.mode=="copy";
+ $("#g-sub").textContent=!g.setup_done?"Not set up yet.":copy?"Killcam '99 works in a separate copy; your own UT is only read.":"Killcam '99 works in your own UT folder.";
+ $("#g-folder").textContent=g.folder||"none";$("#g-src").textContent=g.source;$("#g-src-row").hidden=!(copy&&g.source);
+ $("#g-undo-row").hidden=!g.direct_files;$("#g-undo-hint").textContent=g.direct_files?`${plural(g.direct_files,"file")} added to ${g.direct_game}`:"";
+ $("#g-del-row").hidden=!g.copy_exists;
+ $("#g-upd").firstChild.textContent=copy?"Update the copy and the add-on":"Update the add-on";
+ $("#g-upd-hint").textContent=copy?"picks up changes you made in your own UT since the copy was made":"puts the newest add-on in your UT folder"}
+
+// ---------------- jobs ----------------
+const TITLES={};
+async function runJob(kind,extra={},confirmText=null){
+ if(JOB&&JOB.state=="running"){toast("Another job is still running.");return false}
+ if(confirmText){const ok=await confirmDlg(confirmText);if(!ok)return false}
+ if(S&&S.settings.notify&&"Notification"in window&&Notification.permission=="default")Notification.requestPermission();
+ const r=await post("/api/run",{kind,...extra});if(!r.ok){toast(r.error||"Could not start",4000,true);return false}
+ jobId=r.id;logNext=0;$("#log").innerHTML="";poll(true);return true}
+function confirmDlg(c){return new Promise(res=>{const d=$("#dlg");d.innerHTML="";
+ const okb=el("button",{class:c.danger?"danger":"primary",onclick:()=>done(true)},c.ok||"Start");
+ d.append(el("div",{class:"titlebar"},c.title),el("div",{class:"dbody"},...c.lines.map(l=>el("p",{},l))),el("div",{class:"btns"},el("button",{onclick:()=>done(false)},"Cancel"),okb));
+ const m=$("#modal"),back=document.activeElement;
+ const key=e=>{if(e.key=="Escape"){e.preventDefault();done(false)}else if(e.key=="Enter"&&e.target.tagName!="BUTTON"){e.preventDefault();done(true)}};
+ m.onclick=e=>{if(e.target==m)done(false)};
+ function done(v){m.classList.remove("on");document.removeEventListener("keydown",key,true);m.onclick=null;if(back&&back.focus)back.focus();res(v)}
+ document.addEventListener("keydown",key,true);m.classList.add("on");okb.focus()})}
+function hud(big,small){toast(big+(small?" - "+small:""),5000)}
+function cls(l){return /PROBLEM|ERROR|failed|SAFETY STOP|Traceback/.test(l)?"e":/WARNING|CHECK|NOTE|skipped|NOT FOUND/.test(l)?"w":/clip\(s\) saved|Done|done|Finished|built\.|ready|Ready|linked to|FOUND/.test(l)?"g":/^\[\d\d:\d\d:\d\d\] ===|^> /.test(l)?"h":""}
+let CLOSED=false,HANDLED=null,SCANS_SEEN=0;
+async function poll(force){if(CLOSED)return;
+ const j=await get("/api/job?since="+logNext);if(!j||!j.id){drawJob(null);return}
+ if(j.id!=jobId&&!force){jobId=j.id;logNext=0;$("#log").innerHTML="";return poll(true)}jobId=j.id;
+ const log=$("#log"),atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-30;
+ for(const l of j.lines)log.append(el("div",{class:cls(l)},l));while(log.childElementCount>4000)log.firstChild.remove();
+ logNext=j.next;if(atEnd)log.scrollTop=log.scrollHeight;
+ const was=JOB&&JOB.state;JOB=j;drawJob(j);
+ if(was=="running"&&j.state!="running"){HANDLED=j.id;finished(j)}
+ else if(j.state!="running"&&HANDLED!=j.id){HANDLED=j.id;refreshTab()}
+ if(j.scans_changed&&j.scans_changed!=SCANS_SEEN){const first=!SCANS_SEEN;SCANS_SEEN=j.scans_changed;
+  if(!first&&tab=="demos"&&Date.now()-(LOADED.demos||0)>8000)loadDemos()}}
+function drawJob(j){const box0=$("#job");box0.innerHTML="";wzJob(j);const box={append:(...k)=>box0.append(...k.filter(x=>x!=null&&x!==false))};
+ if(!j)return;
+ const took=(j.ended||Date.now()/1000)-j.started;
+ if(j.state=="running"){const pr=el("div",{class:"prog"+(j.progress?"":" ind")},el("i",{style:j.progress?`width:${100*j.progress[0]/j.progress[1]}%`:""}));
+  box.append(el("div",{class:"spin"}),el("span",{class:"title"},j.title),el("span",{class:"step"},(j.progress?`${j.progress[0]} of ${j.progress[1]} - `:"")+j.step),
+  pr,el("span",{class:"dim2 mono"},dur(Date.now()/1000-j.started)),el("button",{class:"small danger",onclick:stopJob},ic("stop"),"Stop"))}
+ else{const good=j.state=="done";box.append(el("span",{style:`color:${good?"var(--ok)":j.state=="stopped"?"var(--warn)":"var(--bad)"};display:contents`,html:good?ICON.check:ICON.x}),
+  el("span",{class:"title"},j.title),el("span",{class:"step"},(good?"Done":j.state=="stopped"?"Stopped":"Stopped with a problem: open the console")+` after ${dur(took)}`+(j.new_clips?`, ${plural(j.new_clips,"new clip")}`:"")),
+  j.new_clips?el("button",{class:"small primary",onclick:()=>{show("clips");$("#cstate").value="new";drawClips()}},"Review new clips"):null,
+  el("button",{class:"small ghost",onclick:()=>{post("/api/job-clear");JOB=null;drawJob(null)}},"Dismiss"))}}
+async function stopJob(){const ok=await confirmDlg({title:"Stop this job?",lines:["The game and the recording are closed. Clips already saved stay; the rest is done again next time."],ok:"Stop",danger:true});if(ok){await post("/api/stop");toast("Stopping ...")}}
+function refreshTab(t){t=t||tab;return t=="demos"?loadDemos():t=="recs"?loadRecs():t=="clips"?loadClips():t=="packages"?loadLib():loadState()}
+function finished(j){loadState();DEMOS=RECS=CLIPS=LIBD=null;refreshTab();
+ if(j.new_clips&&j.state=="done")hud(j.new_clips==1?"1 new clip":j.new_clips+" new clips","press 3 to review");
+ else if(j.state=="failed")toast(j.title+": stopped with a problem. Press ` for the console.",5000,true);
+ if(S&&S.settings.notify&&"Notification"in window&&Notification.permission=="granted"&&j.kind!="watch")new Notification("Killcam '99: "+j.title,{body:(j.state=="done"?"Done":"Stopped")+(j.new_clips?`, ${plural(j.new_clips,"new clip")}`:"")});
+ if(j.kind=="setup"&&j.state=="done"&&W.pending=="install"){W.pending=null;runJob("install")}}
+setInterval(()=>poll(false),900);
+function toggleConsole(){$("#console").classList.toggle("open");const l=$("#log");l.scrollTop=l.scrollHeight}
+$("#conbtn").onclick=toggleConsole;$("#conclose").onclick=toggleConsole;
+document.addEventListener("keydown",e=>{if(e.ctrlKey||e.altKey||e.metaKey||$$(".modal.on").length)return;
+ if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName))return;
+ if(e.key>="1"&&e.key<="6"){show(TABS[+e.key-1]);return}
+ if(e.key=="`"||e.key=="~"){e.preventDefault();toggleConsole()}
+ if(e.key=="Escape"&&$("#console").classList.contains("open"))toggleConsole()});
+
+// ---------------- demos ----------------
+const DSTAT={new:["Not looked at","pill blue"],incomplete:["Look again","pill bad"],nothing:["No moments","pill"],todo:["To record","pill todo"],partly:["Partly recorded","pill todo"],done:["Recorded","pill ok"]};
+const LOADED={};function stamp_(k){LOADED[k]=Date.now()}
+async function loadDemos(){const d=await get("/api/demos");DEMOS=d;stamp_("demos");drawDemos();if(d.maps_pending)setTimeout(()=>{if(tab=="demos")loadDemos()},6000)}
+function demoFilters(){const c={all:0,new:0,todo:0,done:0,nothing:0,miss:0,removed:0};for(const x of DEMOS.demos){if(x.removed){c.removed++;continue}c.all++;if(x.missing)c.miss++;if(x.status=="new"||x.status=="incomplete")c.new++;else if(x.status=="todo"||x.status=="partly")c.todo++;else if(x.status=="done")c.done++;else c.nothing++}
+ const f=$("#dfilter");f.innerHTML="";for(const[k,l]of[["all","All"],["new","Not looked at"],["todo","To record"],["done","Recorded"],["nothing","No moments"],["miss","Packages missing"],["removed","Removed"]])
+  if((k!="miss"||c.miss)&&(k!="removed"||c.removed))f.append(el("button",{class:dfilt==k?"on":"",onclick:()=>{dfilt=k;drawDemos()}},l,el("span",{class:"n"},c[k])));
+ const todo=c.todo,neu=c.new;$("#b-demos").hidden=!(todo+neu);$("#b-demos").textContent=todo+neu;
+ $("#wt-demos").textContent=`- ${plural(c.all,"demo")}`;
+ $("#clips-meta").textContent=neu||todo?`${neu} not looked at yet, ${todo} with moments still to record.`:"Everything is recorded. New demos show up here.";
+ $("#scan-meta").textContent=neu?`${plural(neu,"demo")} not looked at yet.`:"Every demo has been looked at.";return c}
+function drawDemos(){if(!DEMOS)return;const tb=$("#dbody");tb.innerHTML="";
+ if(DEMOS.error){tb.append(el("tr",{},el("td",{colspan:7,class:"empty"},DEMOS.error)));return}demoFilters();
+ const q=$("#dq").value.toLowerCase();if(dfilt=="removed"&&!DEMOS.demos.some(x=>x.removed))dfilt="all";
+ let rows=DEMOS.demos.filter(x=>(!q||(x.name+" "+x.map).toLowerCase().includes(q))&&(dfilt=="removed"?x.removed:!x.removed)&&
+  (dfilt=="all"||dfilt=="removed"||(dfilt=="new"&&(x.status=="new"||x.status=="incomplete"))||(dfilt=="todo"&&(x.status=="todo"||x.status=="partly"))||(dfilt=="done"&&x.status=="done")||(dfilt=="nothing"&&x.status=="nothing")||(dfilt=="miss"&&x.missing)));
+ const [k,dir]=dsort;rows.sort((a,b)=>{const va=a[k]??"",vb=b[k]??"";return(va>vb?1:va<vb?-1:0)*dir});
+ $("#dcount").textContent=plural(rows.length,"demo");
+ if(!rows.length)tb.append(el("tr",{},el("td",{colspan:7,class:"empty"},DEMOS.demos.length?"No demos match this filter.":"No demos in this folder. Pick the folder with your .dem files.")));
+ for(const x of rows){const[d,t]=fdate(x.when);const st=DSTAT[x.status]||[x.status,"pill"];
+  const cb=el("input",{type:"checkbox"});cb.checked=sel.has(x.path);cb.onchange=()=>{cb.checked?sel.add(x.path):sel.delete(x.path);tr.classList.toggle("sel",cb.checked);drawSel()};
+  const moms=el("div",{class:"moments"},...x.moments.map(m=>{const k=x.path+"|"+m.t,on=MSEL.has(k);
+   const eye=el("span",{class:"eye",title:"Watch this moment in the game",html:ICON.eye,onclick:e=>{e.stopPropagation();runJob("watch",{demo:x.path,at:m.t})}});
+   return el("span",{class:"mom"+(m.done?" done":"")+(on?" picked":""),"data-help":`${m.labels.join(" + ")} at ${dur(m.t)} (${dur(m.a)} to ${dur(m.b)}). `+(m.done?"Already recorded; pick it to record it again.":"Click to pick it for recording."),
+    onclick:()=>{on?MSEL.delete(k):MSEL.set(k,{path:x.path,t:m.t,done:m.done});drawDemos()}},
+    el("span",{class:"pk"},on?"✓":""),el("span",{class:"t"},dur(m.t)),el("b",{},m.labels.join(" + ")),m.done?el("span",{class:"ok"},"✓"):null,eye)}));
+  if(!x.moments.length)moms.append(el("span",{class:"dim2"},x.status=="new"?"find kills to see them":x.status=="incomplete"?"find kills again":"none"));
+  const tr=el("tr",{class:sel.has(x.path)?"sel":""},el("td",{class:"cb"},cb),el("td",{class:"when"},d,el("small",{},t)),
+   el("td",{},x.map||el("span",{class:"dim2"},DEMOS.maps_pending?"finding ...":"?"),el("small",{class:"dim2",style:"display:block;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap",title:x.name},x.name)),
+   el("td",{class:"mono"},dur(x.length)),el("td",{},moms),
+   el("td",{},el("span",{class:st[1]},st[0]),x.missing?el("div",{style:"margin-top:4px"},el("button",{class:"pill bad","data-help":"Packages this demo needs are in none of your places. Click for the details.",onclick:()=>openPkgs(x)},plural(x.missing,"package")+" missing")):null),
+   el("td",{style:"white-space:nowrap"},el("button",{class:"small ghost","data-help":"Watch the whole demo in the game.",onclick:()=>runJob("watch",{demo:x.path})},ic("eye"),"Watch"),
+    el("button",{class:"small ghost","data-help":"Every package version this demo needs, and where each one is.",onclick:()=>openPkgs(x)},ic("box"),"Packages"),
+    x.removed?el("button",{class:"small","data-help":"Show this demo in the list again.",onclick:()=>removeDemos([x.name],true)},"Put back")
+     :el("button",{class:"small ghost","data-help":"Take this demo off the list. The .dem file stays where it is; Removed brings it back.",onclick:()=>removeDemos([x.name])},ic("x"),"Remove")));
+  tb.append(tr)}
+ $("#dall").checked=rows.length&&rows.every(x=>sel.has(x.path));$("#dall").onchange=e=>{for(const x of rows)e.target.checked?sel.add(x.path):sel.delete(x.path);drawDemos()};drawSel()}
+function drawSel(){const n=sel.size;$("#dsel").classList.toggle("on",n>0);$("#dseln").textContent=`${plural(n,"demo")} selected`;
+ const ms=[...MSEL.values()],nd=new Set(ms.map(m=>m.path)).size,done=ms.filter(m=>m.done).length;$("#msel").classList.toggle("on",ms.length>0);
+ $("#mseln").textContent=`${plural(ms.length,"moment")} picked in ${plural(nd,"demo")}`;$("#mseldone").textContent=done?`(${done} already recorded: recorded again)`:""}
+const MSEL=new Map();
+$("#msel-clear").onclick=()=>{MSEL.clear();drawDemos()};
+$("#msel-rec").onclick=()=>{const ms=[...MSEL.values()],by={};for(const m of ms)(by[m.path]=by[m.path]||[]).push(m.t);
+ const done=ms.filter(m=>m.done).length;
+ runJob("clips",{moments:by},{title:`Record ${plural(ms.length,"picked moment")}?`,lines:[`Only these moments are played and recorded, from ${plural(Object.keys(by).length,"demo")}.`+(done?` ${done} were recorded before; their clips are replaced.`:""),
+  "Every sound your PC plays while recording ends up in the clips."],ok:"Record"}).then(ok=>{if(ok){MSEL.clear();drawDemos()}})};
+$$("th.sort[data-sort]").forEach(th=>th.onclick=()=>{const k=th.dataset.sort;dsort=[k,dsort[0]==k?-dsort[1]:(k=="when"?-1:1)];drawDemos()});
+$("#dq").oninput=drawDemos;$("#sel-clear").onclick=()=>{sel.clear();drawDemos()};
+$("#sel-clips").onclick=()=>runJob("clips",{demos:[...sel]},{title:`Make clips from ${plural(sel.size,"demo")}?`,lines:["Demos not looked at yet are played fast first to find the kills. Then only the moments worth a clip are recorded.","Every sound your PC plays while recording ends up in the clips."],ok:"Make clips"});
+$("#sel-scan").onclick=()=>runJob("scan",{demos:[...sel]});
+$("#sel-remove").onclick=()=>removeDemos([...sel].map(p=>p.split(/[\\/]/).pop()));
+async function removeDemos(names,putBack=false){const r=await post("/api/demo-remove",{names,put_back:putBack});if(!r.ok){toast(r.error,4000,true);return}
+ if(!putBack){for(const p of[...sel])if(names.includes(p.split(/[\\/]/).pop()))sel.delete(p);for(const[k,m]of[...MSEL])if(names.includes(m.path.split(/[\\/]/).pop()))MSEL.delete(k)}
+ toast(putBack?`${plural(names.length,"demo")} back on the list`:`${plural(names.length,"demo")} removed from the list. The files are untouched; see Removed to put them back.`,putBack?2600:4500);
+ await loadDemos();LIBD=null}
+$("#go-clips").onclick=()=>{const c=demoFilters();runJob("clips",{},{title:"Make clips from new demos?",lines:[`${plural(c.new,"demo")} are played fast first to find the kills; then the moments worth a clip are recorded (${c.todo} demos already have moments waiting).`,"Recording runs in the background, but every sound your PC plays ends up in the clips. Don't minimise the game window."],ok:"Make clips"})};
+$("#go-scan").onclick=()=>runJob("scan");
+$("#go-rescan").onclick=()=>{const n=DEMOS?DEMOS.demos.length:0,secs=DEMOS?DEMOS.demos.reduce((t,x)=>t+(x.length||0),0):0;
+ const jobs=+S.settings.scan_jobs||S.auto_jobs||1,speed=Math.min(+S.settings.scan_speed||40,30);
+ runJob("scan",{all:true},{title:`Find kills in all ${n} demos again?`,lines:["Every demo is played again, also the ones done before. Useful after an update, or when results look wrong.",
+ `About ${Math.max(1,Math.round(secs/(speed*jobs)/60))} min (${jobs} at a time). Nothing is recorded; your clips stay.`],ok:"Find kills again"})};
+
+// ---------------- packages of one demo ----------------
+const STATUS={game:["In the game","pill ok"],base:["Base pack","pill ok"],folder:["Your folder","pill ok"],download:["Found online","pill ok"],missing:["Missing","pill bad"],optional:["Optional, missing","pill"]};
+function ago(t){if(!t)return"never";const d=(Date.now()/1000-t)/86400;return d<1?"today":d<2?"yesterday":`${Math.round(d)} days ago`}
+async function openPkgs(x){const m=$("#pmodal"),d=$("#pdlg");d.innerHTML="";
+ d.append(el("div",{class:"titlebar"},"Packages",el("span",{class:"count"},"- "+x.name)),el("div",{class:"dbody"},el("p",{},"Loading ...")));m.classList.add("on");
+ const r=await get("/api/demo-packages?path="+encodeURIComponent(x.path));const body=d.querySelector(".dbody");body.innerHTML="";
+ if(!r.known){body.append(el("p",{},"This demo has not been read yet. Refresh packages (Packages, Where to look) and open this again."))}
+ else{const miss=r.packages.filter(p=>p.status=="missing");
+  body.append(el("p",{},`${plural(r.packages.length,"package version")} needed; `+(miss.length?`${miss.length} missing. A demo only plays with the exact version (GUID) the server used.`:"every one is available.")),
+  el("div",{class:"tablewrap",style:"max-height:58vh"},el("table",{},el("thead",{},el("tr",{},...["Status","Package","File","Version (GUID)","Size","Gen","Where / other versions you have"].map(h=>el("th",{},h)))),
+   el("tbody",{},...r.packages.map(p=>el("tr",{class:p.status=="missing"?"missing":""},
+    el("td",{},el("span",{class:(STATUS[p.status]||STATUS.game)[1]},(STATUS[p.status]||STATUS.game)[0])),
+    el("td",{},el("b",{},p.pkg),p.type?el("small",{class:"dim2",style:"display:block"},p.type+(p.stock?", retail":"")):null),
+    el("td",{class:"mono"},p.fname),
+    el("td",{},el("span",{class:"guid"},p.guid),el("button",{class:"small ghost",title:"Copy GUID",onclick:()=>copyText(p.guid,"GUID")},ic("copy"))),
+    el("td",{class:"mono"},p.size?size(p.size):"?"),el("td",{class:"mono"},p.gen??"?"),
+    el("td",{},p.status=="missing"?otherVersions(p):el("span",{class:"dim"},p.where.join(", ")))))))))}
+ const fb=el("div",{class:"btns"});
+ const missG=r.packages?r.packages.filter(p=>p.status=="missing").map(p=>p.guid):[];
+ if(missG.length){fb.append(el("button",{class:"left",onclick:addSource},"Add a folder that has them"),el("button",{class:"primary",onclick:()=>{closeP();runJob("library_fetch",{guids:missG})}},`Search online for ${missG.length==1?"it":"these "+missG.length}`))}
+ fb.append(el("button",{onclick:closeP},"Close"));d.append(fb);
+ const key=e=>{if(e.key=="Escape"){e.preventDefault();closeP()}};document.addEventListener("keydown",key,true);
+ m.onclick=e=>{if(e.target==m)closeP()};function closeP(){m.classList.remove("on");document.removeEventListener("keydown",key,true)}
+ (fb.querySelector(".primary")||fb.lastChild).focus()}
+function otherVersions(p){const o=p.other_versions||[];const on=p.online;
+ return el("div",{},o.length?el("div",{},el("span",{class:"pill todo"},plural(o.length,"other version"))," you have: ",...o.slice(0,3).map((v,i)=>el("span",{class:"guid",title:v.where.join(", ")},(i?", ":"")+v.guid.slice(0,8)+"..")))
+  :el("span",{class:"dim2"},"no other version of "+p.pkg+" found"),el("div",{class:"dim2",style:"font-size:12px"},on?`Searched online ${ago(on.checked)}: ${on.found?"found":"not found"}`:"Not searched online yet"))}
+
+// ---------------- recordings ----------------
+const RSTAT={new:["Not read yet","pill blue"],changed:["Changed since","pill blue"],waiting:["Waiting for its demo","pill todo"],checked:["Read","pill"]};
+async function loadRecs(){RECS=await get("/api/recordings");stamp_("recs");drawRecs()}
+function drawRecs(){if(!RECS)return;const tb=$("#rbody");tb.innerHTML="";if(RECS.error){tb.append(el("tr",{},el("td",{colspan:5,class:"empty"},RECS.error)));return}
+ const q=$("#rq").value.toLowerCase();const rows=RECS.recordings.filter(x=>!q||x.name.toLowerCase().includes(q));
+ const neu=RECS.recordings.filter(x=>x.status=="new"||x.status=="changed"||x.status=="waiting").length;$("#b-recs").hidden=!neu;$("#b-recs").textContent=neu;
+ $("#wt-recs").textContent=`- ${plural(RECS.recordings.length,"recording")}`;
+ $("#obs-meta").textContent=neu?`${plural(neu,"recording")} not read yet.`:"Every recording has been read.";
+ $("#rcount").textContent=plural(rows.length,"recording")+(RECS.more?` (newest 400 shown)`:"");
+ if(!rows.length)tb.append(el("tr",{},el("td",{colspan:5,class:"empty"},"No recordings in this folder. Pick the folder OBS or Streamlabs saves to.")));
+ for(const x of rows){const[d,t]=fdate(x.when);const st=RSTAT[x.status]||[x.status,"pill"];
+  tb.append(el("tr",{},el("td",{class:"when"},d,el("small",{},t)),el("td",{},x.name,x.folder?el("small",{class:"dim2",style:"display:block"},x.folder):null),el("td",{class:"mono"},size(x.size)),
+   el("td",{},el("span",{class:x.clips?"pill ok":st[1]},x.clips?plural(x.clips,"clip"):st[0]),x.fresh?el("div",{},el("span",{class:"pill"},"still being written?")):null),
+   el("td",{style:"white-space:nowrap"},el("button",{class:"small",onclick:()=>runJob("obs",{files:[x.path]}),"data-help":"Cut this recording's clips (again) with the current options."},ic("cut"),"Make clips"),
+    el("button",{class:"small ghost",onclick:()=>runJob("obs_rescan",{files:[x.path]}),"data-help":"Read this recording again from scratch, then cut its clips again."},"Read again"),
+    el("button",{class:"small ghost",onclick:()=>post("/api/open",{what:"file",path:x.path}),"data-help":"Show in Explorer."},ic("folder")))))}}
+$("#rq").oninput=drawRecs;$("#go-obs").onclick=()=>runJob("obs");$("#go-obsdebug").onclick=()=>runJob("obs_debug");
+$("#go-obsrescan").onclick=()=>runJob("obs_rescan",{},{title:`Read all ${RECS?plural(RECS.recordings.length,"recording"):"recordings"} again?`,lines:["Every recording is read again from scratch (about a quarter of its length each) and its clips are cut again.","Clips you have are replaced by the new cut; a clip the new reading no longer finds is kept and named in the console."],ok:"Read all again"});
+
+// ---------------- clips ----------------
+async function loadClips(){CLIPS=await get("/api/clips");stamp_("clips");drawClips()}
+function drawClips(){if(!CLIPS)return;const items=CLIPS.items;const g=$("#cgrid");g.innerHTML="";
+ const cats={};for(const x of items)if(x.status!="rejected")cats[x.category]=(cats[x.category]||0)+1;
+ const st=$("#cstats");st.innerHTML="";const tot=items.filter(x=>x.status!="rejected").length;
+ const tile=(b,t)=>el("div",{class:"stat"},el("b",{},b),el("span",{},t));
+ st.append(tile(tot,"clips"),tile(items.filter(x=>x.status=="new").length,"not reviewed yet"),tile(items.filter(x=>x.status=="kept").length,"kept"),tile(items.filter(x=>x.status=="rejected").length,"rejected"));
+ $("#wt-clips").textContent=`- ${plural(tot,"clip")}`;
+ const cc=$("#ccat");cc.innerHTML="";for(const c of["All",...Object.keys(cats).sort()])cc.append(el("button",{class:ccat==c?"on":"",onclick:()=>{ccat=c;drawClips()}},c,el("span",{class:"n"},c=="All"?tot:cats[c])));
+ const sv=$("#cstate").value,src=$("#csrc").value;
+ const list=items.filter(x=>(ccat=="All"||x.category==ccat)&&(src=="all"||x.source==src)&&(sv=="all"||(sv=="open"&&x.status!="rejected")||(sv=="warn"&&x.warn&&x.status!="rejected")||x.status==sv)).sort((a,b)=>b.created-a.created);
+ if(!list.length){g.append(el("div",{class:"empty",style:"grid-column:1/-1"},items.length?"No clips match these filters.":"No clips yet. Make some in Demos or Recordings."));return}
+ for(const x of list){const card=el("div",{class:"clip "+(x.status||"")});
+  const v=x.playable?el("video",{controls:true,preload:"metadata",src:"/media/"+x.id}):el("div",{class:"noplay"},el("button",{onclick:()=>post("/api/clip-open",{id:x.id,play:true})},ic("play"),"Play in your video player"));
+  const b=el("div",{class:"b"},el("div",{class:"cat"},x.category),el("div",{class:"t"},(x.labels||[]).join(" + ")),el("div",{class:"m"},`${x.origin} at ${x.stamp}`),x.check?el("div",{class:x.warn?"w":"q"},x.check):null);
+  const set=s=>post("/api/clip-status",{id:x.id,status:s}).then(r=>{if(r.ok){x.status=r.status;drawClips();loadState()}else toast(r.error,4000,true)});
+  const a=el("div",{class:"a"},el("button",{class:"small",onclick:()=>set("kept")},ic("check"),x.status=="kept"?"Kept":"Keep"),
+   el("button",{class:"small",onclick:()=>set(x.status=="rejected"?"new":"rejected")},ic("x"),x.status=="rejected"?"Restore":"Reject"),
+   el("button",{class:"small ghost","data-help":"Show in Explorer.",onclick:()=>post("/api/clip-open",{id:x.id,play:false})},ic("folder")));
+  card.append(v,b,a);g.append(card)}}
+$("#cstate").onchange=drawClips;$("#csrc").onchange=drawClips;
+
+// ---------------- packages ----------------
+let LIBD=null,ltype="all",lkind="all",lsort=[0,1];
+const TYPES=[["all","All"],["map","Maps"],["textures","Textures"],["sounds","Sounds"],["music","Music"],["code","Code"]];
+async function loadLib(){LIBD=await get("/api/library");stamp_("packages");drawLib()}
+function drawLib(){if(!LIBD)return;const s=LIBD.summary;
+ const st=$("#lstats");st.innerHTML="";const tile=(b,t,c)=>el("div",{class:"stat"+(c?" "+c:"")},el("b",{},b),el("span",{},t));
+ st.append(tile(s.packages,"package versions known"),tile(s.gb.toFixed(2)+" GB","in all places"),tile(LIBD.base.count,"in the base pack"),
+  tile(s.needed,`needed by your ${s.demos} demos`),tile(s.missing,"needed but missing",s.missing?"bad":""));
+ $("#b-lib").hidden=!s.missing;$("#b-lib").textContent=s.missing+" missing";$("#pk-nmiss").textContent=s.missing?` ${s.missing}`:"";
+ $("#wt-packages").textContent=`- ${plural(s.packages,"version")}`+(s.missing?`, ${s.missing} missing`:"");
+ $("#lib-meta").textContent=s.built?`Last refreshed ${new Date(s.built*1000).toLocaleString()}.`:"Not refreshed yet.";
+ // missing
+ const mb=$("#lmiss");mb.innerHTML="";$("#lmiss-count").textContent=LIBD.missing.length?plural(LIBD.missing.length,"version")+" missing":"";
+ $("#go-fetch").disabled=!LIBD.missing.length;
+ if(!LIBD.missing.length)mb.append(el("tr",{},el("td",{colspan:8,class:"empty"},LIBD.index_exists?"Nothing is missing: every package version your demos need is available.":"Not refreshed yet: open Where to look and press Refresh packages.")));
+ for(const m of LIBD.missing)mb.append(el("tr",{class:"missing"},
+  el("td",{},el("b",{},m.pkg),el("small",{class:"mono dim2",style:"display:block"},m.fname)),
+  el("td",{},el("span",{class:"guid"},m.guid),el("button",{class:"small ghost",title:"Copy GUID",onclick:()=>copyText(m.guid,"GUID")},ic("copy"))),
+  el("td",{class:"mono"},m.size?size(m.size):"?"),el("td",{class:"mono"},m.gen??"?"),
+  el("td",{},el("details",{class:"demos"},el("summary",{},plural(m.demos.length,"demo")),el("div",{},m.demos.join("\n")))),
+  el("td",{},(m.other_versions||[]).length?el("div",{},...m.other_versions.slice(0,4).map(v=>el("div",{},el("span",{class:"guid"},v.guid.slice(0,8)+".."),el("span",{class:"dim2"}," "+size(v.size)+", "+v.where.join(", "))))):el("span",{class:"dim2"},"none")),
+  el("td",{class:"dim",style:"font-size:12px"},m.online?`${ago(m.online.checked)}: ${m.online.found?"found":"not found"}`:"not yet"),
+  el("td",{},el("button",{class:"small",onclick:()=>runJob("library_fetch",{guids:[m.guid]})},"Search online"))));
+ // places
+ const pl=$("#lplaces");pl.innerHTML="";const roots=LIBD.roots||[];const KL={game:"Game folder",base:"Base pack (comes with Killcam '99)",folder:"Your folder",download:"Found online"};
+ if(!roots.length)pl.append(el("p",{class:"dim"},"Nothing yet: press Refresh packages."));
+ roots.forEach((r,i)=>pl.append(el("div",{class:"place"},el("span",{class:"no"},i+1),el("div",{class:"what"},el("b",{},KL[r.kind]||r.kind),el("span",{class:"mono",title:r.path},r.path)),
+  el("span",{class:"cnt"},r.versions!=null?plural(r.versions,"version"):""),
+  r.kind=="folder"?el("button",{class:"small ghost",onclick:()=>removeSource(r.path)},"Remove"):null)));
+ const src=S?S.settings.library_sources||[]:[];for(const f of src)if(!roots.some(r=>r.path==f))pl.append(el("div",{class:"place"},el("span",{class:"no"},"+"),el("div",{class:"what"},el("b",{},"Your folder (not read yet)"),el("span",{class:"mono"},f)),el("button",{class:"small ghost",onclick:()=>removeSource(f)},"Remove")));
+ // all
+ const tf=$("#ltype");tf.innerHTML="";for(const[k,l]of TYPES)tf.append(el("button",{class:ltype==k?"on":"",onclick:()=>{ltype=k;drawLib()}},l));
+ const kf=$("#lkind");kf.innerHTML="";for(const[k,l]of[["all","All"],["community","Community"],["stock","Retail"],["needed","Needed by demos"]])kf.append(el("button",{class:lkind==k?"on":"",onclick:()=>{lkind=k;drawLib()}},l));
+ const q=$("#lq").value.toLowerCase();let rows=LIBD.rows.filter(r=>(ltype=="all"||r[1]==ltype)&&(lkind=="all"||(lkind=="stock"?r[2]:lkind=="community"?!r[2]:r[5]>0))&&(!q||r[0].toLowerCase().includes(q)||r[4].toLowerCase().includes(q)));
+ const[k,dir]=lsort;rows.sort((a,b)=>{const va=typeof a[k]=="string"?a[k].toLowerCase():a[k],vb=typeof b[k]=="string"?b[k].toLowerCase():b[k];return(va>vb?1:va<vb?-1:0)*dir});
+ const tb=$("#lbody");tb.innerHTML="";
+ if(!rows.length)tb.append(el("tr",{},el("td",{colspan:7,class:"empty"},LIBD.rows.length?"Nothing matches.":"Nothing known yet: press Refresh packages.")));
+ for(const r of rows.slice(0,400))tb.append(el("tr",{},el("td",{},r[0]),el("td",{class:"dim"},r[1]),el("td",{},el("span",{class:r[2]?"pill":"pill ok"},r[2]?"retail":"community")),
+  el("td",{class:"mono"},size(r[3])),el("td",{},el("span",{class:"guid"},r[4])),el("td",{class:"mono"},r[5]||""),
+  el("td",{class:"dim",style:"font-size:12px"},(r[6]?r[6].split("/"):[]).map(i=>LIBD.kinds[+i]).join(", "))));
+ $("#lmore").textContent=rows.length>400?`Showing 400 of ${rows.length}; search to narrow it down, or open it as a spreadsheet.`:plural(rows.length,"package version")}
+$$("[data-lsort]").forEach(th=>th.onclick=()=>{const k=+th.dataset.lsort;lsort=[k,lsort[0]==k?-lsort[1]:(k==3||k==5?-1:1)];drawLib()});
+$("#lq").oninput=drawLib;
+$("#go-libbuild").onclick=()=>runJob("library_build");
+$("#go-fetch").onclick=()=>runJob("library_fetch",{},{title:`Search online for ${plural(LIBD.missing.length,"missing version")}?`,lines:["Killcam '99 looks on UT redirect servers, in every copy the Wayback Machine archived, and in the releases of known mods. Only the exact version (same GUID) is kept.","This can take several minutes."],ok:"Search online"});
+async function addSource(){toast("A folder window opened (it may be behind this one).",4000);const r=await post("/api/pick-folder",{which:"libsrc"});
+ if(r.ok){await loadState();toast("Folder added. Reading it now ...");runJob("library_build")}}
+async function removeSource(f){const r=await post("/api/settings",{values:{library_sources:(S.settings.library_sources||[]).filter(x=>x!=f)}});S.settings=r.settings;toast("Folder removed. Refresh packages to update the list.",3500);drawLib()}
+$("#go-addsrc").onclick=addSource;$("#go-addsrc2").onclick=addSource;
+
+// ---------------- options ----------------
+let audioLoaded=false;
+function fillSettings(){if(!S)return;const st=S.settings;
+ for(const g of["multi","spree"]){const box=$("#trg-"+g);box.innerHTML="";for(const t of S.triggers.filter(t=>t.group==g)){const c=el("input",{type:"checkbox"});c.checked=st.triggers.includes(t.key);
+  c.onchange=()=>{const set=new Set(S.settings.triggers);c.checked?set.add(t.key):set.delete(t.key);saveSetting("triggers",[...set])};box.append(el("label",{},c,t.label))}}
+ $$("[data-setting]").forEach(i=>{const k=i.dataset.setting,v=st[k];if(i.type=="checkbox")i.checked=!!v;else i.value=v??""});
+ if(!audioLoaded)loadAudio(false)}
+async function loadAudio(refresh){audioLoaded=true;const s=$("#audiodev");const r=await get("/api/audio"+(refresh?"?refresh=1":""));const cur=S.settings.audio_device;
+ s.innerHTML="";s.append(el("option",{value:""},"Windows default output"));for(const d of r.devices)s.append(el("option",{value:d},d));
+ if(cur&&!r.devices.includes(cur))s.append(el("option",{value:cur},cur+" (not found now)"));s.value=cur;if(refresh)toast(plural(r.devices.length,"sound device")+" found")}
+$("#audiorefresh").onclick=()=>loadAudio(true);
+let saveT=null;async function saveSetting(k,v){S.settings[k]=v;const r=await post("/api/settings",{values:{[k]:v}});if(r.ok){S.settings=r.settings;clearTimeout(saveT);saveT=setTimeout(()=>toast("Saved"),250);
+ if(k=="dev_mode")document.body.classList.toggle("dev",!!v);
+ if(["triggers","return_on","return_window","capture_on","capture_window","carrier_kills","part_before","part_after"].includes(k))DEMOS=null}}
+$$("[data-setting]").forEach(i=>i.onchange=()=>saveSetting(i.dataset.setting,i.type=="checkbox"?i.checked:i.value));
+$("#reset").onclick=async()=>{if(await confirmDlg({title:"Back to the standard options?",lines:["Your folders and game setup are kept."],ok:"Reset",danger:true})){const r=await post("/api/reset-settings");S.settings=r.settings;fillSettings();toast("Options reset")}};
+$("#g-wizard").onclick=()=>openWizard();
+$("#g-setup").onclick=()=>runJob("setup",{},{title:"Update the game setup?",lines:[S.game.mode=="copy"?"The copy is brought up to date with your UT folder, and the add-on is put in place again.":"The add-on in your UT folder is put in place again."],ok:"Update"});
+$("#g-undo").onclick=()=>runJob("undo",{},{title:"Remove Killcam '99 from your UT folder?",lines:[`The ${plural(S.game.direct_files,"file")} Killcam '99 added to ${S.game.direct_game} are removed: the add-on and the packages it copied into Cache.`,"Your demos, settings and everything else stay. Run the setup again to use Killcam '99 afterwards."],ok:"Remove",danger:true});
+$("#g-delcopy").onclick=()=>runJob("remove_copy",{},{title:"Delete the separate copy?",lines:["The copy of UT inside the Killcam '99 folder is deleted. Your own UT folder is not touched.",S.game.mode=="copy"?"Killcam '99 cannot record until you run the setup again.":"Killcam '99 keeps working with your own UT folder."],ok:"Delete",danger:true});
+
+$$("[data-refresh]").forEach(b=>b.onclick=async()=>{b.classList.add("spinning");try{await refreshTab(b.dataset.refresh);await loadState()}finally{b.classList.remove("spinning")}});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!CLOSED&&Date.now()-(LOADED[tab]||0)>20000)refreshTab()});
+
+// ---------------- folders, tools ----------------
+$$("[data-pick]").forEach(b=>b.onclick=async()=>{toast("A folder window opened (it may be behind this one).",4000);const r=await post("/api/pick-folder",{which:b.dataset.pick});
+ if(r.ok){toast("Folder set");await loadState();if(b.dataset.pick=="demo"){sel.clear();loadDemos()}else if(b.dataset.pick=="obs")loadRecs()}});
+$$("[data-open]").forEach(b=>b.onclick=()=>post("/api/open",{what:b.dataset.open}));
+$$("[data-job]").forEach(b=>b.onclick=()=>runJob(b.dataset.job));
+$("#clean").onclick=async()=>{const r=await post("/api/clean");if(r.ok){toast(`Freed ${size(r.freed)}`);loadState()}else toast(r.error,4000,true)};
+$("#diag").onclick=async()=>{const t=await (await fetch("/api/diagnostics")).text();copyText(t,"Diagnostics")};
+async function restartApp(){if(JOB&&JOB.state=="running"){toast("Wait until the job is done.");return}
+ const r=await post("/api/restart");if(!r.ok){toast(r.error,4000,true);return}CLOSED=true;
+ document.body.innerHTML='<div class="empty" style="padding:80px">Restarting Killcam \'99 ...</div>';
+ for(let i=0;i<60;i++){await new Promise(r=>setTimeout(r,700));try{const p=await fetch("/api/ping",{cache:"no-store"});if(p.ok){location.reload();return}}catch(e){}}
+ document.body.innerHTML='<div class="empty" style="padding:80px">Killcam \'99 did not come back. Start Killcam99.bat again.</div>'}
+$("#quit").onclick=async()=>{if(await confirmDlg({title:"Close Killcam '99?",lines:[JOB&&JOB.state=="running"?"A job is running; it is stopped.":"You can open it again with Killcam99.bat."],ok:"Close",danger:true})){CLOSED=true;await post("/api/quit");document.body.innerHTML='<div class="empty" style="padding:80px">Killcam \'99 is closed. You can close this window.</div>'}};
+
+// ---------------- setup wizard ----------------
+const W={step:1,info:null,ut:"",check:null,mode:"copy",demo:"",obs:"",out:"",pending:null,started:false};
+const STEPS=["Find Unreal Tournament","How to use it","Your folders","Set up"];
+async function openWizard(){W.step=1;W.started=false;W.info=await get("/api/setup-info");const g=W.info.game,st=W.info.settings;
+ W.mode=g.setup_done?g.mode:"copy";W.ut=g.mode=="direct"&&g.folder?g.folder:(g.source||(W.info.candidates[0]||{}).path||"");W.check=null;
+ W.obs=st.obs_folder;W.out=g.setup_done?S.clips:W.info.default_out;W.demo=g.setup_done?st.demo_folder:"";
+ $("#wmodal").classList.add("on");if(W.ut)await checkUT(W.ut);drawWizard()}
+async function checkUT(p){W.ut=p;W.check=null;drawWizard();W.check=await get("/api/check-ut?path="+encodeURIComponent(p));
+ if(W.check.ok&&!W.demo)W.demo=W.check.system;drawWizard()}
+function closeWizard(){$("#wmodal").classList.remove("on")}
+function drawWizard(){const d=$("#wdlg");d.innerHTML="";const done=S&&S.game.setup_done;
+ d.append(el("div",{class:"titlebar"},"Killcam '99 Setup",el("span",{class:"count"},done?"- change how the game is used":"- first start")),
+  el("div",{class:"steps"},...STEPS.map((s,i)=>el("span",{class:i+1==W.step?"on":i+1<W.step?"done":""},el("b",{},i+1),s))));
+ const b=el("div",{class:"dbody wz"});d.append(b);const btn=el("div",{class:"btns"});d.append(btn);
+ const next=el("button",{class:"primary"},"Next");const back=el("button",{onclick:()=>{W.step--;drawWizard()}},"Back");
+ const later=el("button",{class:"ghost left",onclick:closeWizard},done?"Cancel":"Not now");
+ if(W.step==1){b.append(el("h4",{},"Where is your Unreal Tournament?"),el("p",{},"Pick the folder you play UT from (it has a System folder with UnrealTournament.exe). It needs the OldUnreal 469 patch."));
+  const list=el("div",{});for(const c of W.info.candidates){const on=c.path==W.ut;
+   list.append(el("label",{class:"choice"+(on?" on":"")},el("input",{type:"radio",name:"ut",checked:on,onchange:()=>checkUT(c.path)}),el("div",{},el("b",{},c.name),el("div",{class:"p mono"},c.path))))}
+  if(W.ut&&!W.info.candidates.some(c=>c.path==W.ut))list.append(el("label",{class:"choice on"},el("input",{type:"radio",checked:true}),el("div",{},el("b",{},"Chosen folder"),el("div",{class:"p mono"},W.ut))));
+  if(!W.info.candidates.length)list.append(el("p",{class:"dim"},"No UT folder found automatically. Browse to it."));
+  b.append(list,el("div",{class:"bar"},el("button",{onclick:async()=>{toast("A folder window opened (it may be behind this one).",4000);const r=await post("/api/pick-folder",{which:"ut",start:W.ut});if(r.ok)checkUT(r.folder)}},ic("folder"),"Browse ...")));
+  if(W.ut&&!W.check)b.append(el("p",{class:"dim"},"Checking this folder ..."));
+  else if(W.check)b.append(el("div",{class:"verdict"+(W.check.ok?"":" bad")},W.check.ok?`Unreal Tournament found: ${size(W.check.size)}`+(W.check.demos?`, ${plural(W.check.demos,"demo")} in its System folder.`:"."):W.check.problem));
+  next.disabled=!(W.check&&W.check.ok);next.onclick=()=>{W.step=2;drawWizard()};btn.append(later,next)}
+ else if(W.step==2){const c=W.check;const enough=c.free>c.size*1.05;
+  b.append(el("h4",{},"How should Killcam '99 use it?"),el("p",{},"Both make the same clips. The difference is where Killcam '99 is allowed to write."));
+  const card=(mode,title,p,items,facts)=>el("label",{class:"choice"+(W.mode==mode?" on":"")},el("input",{type:"radio",name:"mode",checked:W.mode==mode,onchange:()=>{W.mode=mode;drawWizard()}}),
+   el("div",{},el("b",{},title),el("div",{class:"p"},p),el("ul",{},...items.map(i=>el("li",{},i))),el("div",{class:"facts"},...facts.map(f=>el("span",{},f)))));
+  b.append(card("copy","Make a separate copy (safest)","Killcam '99 copies your UT into its own folder and only ever works in that copy.",
+    ["Your own UT folder is only read: nothing in it changes, ever.","You can keep playing UT while clips are being made.","Takes a few minutes and extra disk space. Run Update later to pick up changes in your UT."],
+    [`needs ${size(c.size)}`,`${size(c.free)} free`+(enough?"":" - not enough")]),
+   card("direct","Use my UT folder directly (no extra space)","Killcam '99 works in the folder you play from, with the smallest possible footprint.",
+    ["Adds one add-on file (System\\UT2VidHook.u), and later only the map and mod packages your demos need, to Cache.","Your settings files are never edited: Killcam '99 runs the game with its own copies.","Temporary files are removed after every run. Options, Game, Remove takes everything out again.","Don't play UT while clips are being recorded."],
+    ["needs 18 KB","ready in seconds"]));
+  if(S.game.direct_files&&W.mode=="copy")b.append(el("p",{class:"dim"},`What Killcam '99 added to ${S.game.direct_game} before is removed first.`));
+  next.disabled=W.mode=="copy"&&!enough;next.onclick=()=>{W.step=3;drawWizard()};btn.append(later,back,next)}
+ else if(W.step==3){b.append(el("h4",{},"Your folders"),el("p",{},"Killcam '99 only reads your demos and recordings. You can change these later in Options."));
+  const row=(label,hint,key,which)=>el("div",{class:"frow"},el("div",{class:"l"},el("b",{},label),el("span",{class:"mono"},W[key]||"not set"),el("span",{class:"dim2",style:"font-size:12px"},hint)),
+   el("button",{class:"small",onclick:async()=>{toast("A folder window opened (it may be behind this one).",4000);const r=await post("/api/pick-folder",{which,start:W[key]});if(r.ok){W[key]=r.folder;drawWizard()}}},"Change"));
+  b.append(row("Demos","UT saves demos in its System folder unless you chose another one.","demo","demo_any"),
+   row("Recordings (optional)","Where OBS or Streamlabs saves your recordings, if you use them.","obs","demo_any"),
+   row("Clips","Where Killcam '99 saves the clips it makes.","out","out"));
+  next.onclick=()=>{W.step=4;drawWizard()};btn.append(later,back,next)}
+ else{const ff=S.health.checks.find(x=>x.id=="ffmpeg");W.needff=!ff.ok;
+  b.append(el("h4",{},W.started?"Setting up ...":"Ready to set up"),
+   el("div",{class:"frow"},el("div",{class:"l"},el("b",{},"Unreal Tournament"),el("span",{class:"mono"},W.ut),el("span",{class:"dim2"},W.mode=="copy"?"a separate copy is made":"used directly"))),
+   el("div",{class:"frow"},el("div",{class:"l"},el("b",{},"Folders"),el("span",{class:"mono"},"Demos: "+W.demo),el("span",{class:"mono"},"Clips: "+W.out))),
+   el("div",{class:"frow"},el("div",{class:"l"},el("b",{},"ffmpeg (records and cuts the clips)"),el("span",{class:"dim"},W.needff?"Downloaded from gyan.dev after the setup (about 100 MB)":"Already there"))),
+   el("div",{id:"wz-job",style:"margin-top:12px"}));
+  const go=el("button",{class:"primary",onclick:startSetup},W.started?"Setting up ...":"Set up");go.disabled=W.started;
+  btn.append(later,back,go);back.disabled=W.started;wzJob(JOB)}
+ const f=btn.querySelector("button.primary:not(:disabled)");if(f)f.focus()}
+async function startSetup(){await post("/api/setup-save",{demo_folder:W.demo,obs_folder:W.obs,clips_folder:W.out});
+ W.pending=W.needff?"install":null;W.started=true;const ok=await runJob("setup",{ut:W.ut,mode:W.mode});if(!ok){W.started=false}drawWizard()}
+function wzJob(j){const box=document.getElementById("wz-job");if(!box||!W.started)return;box.innerHTML="";if(!j)return;
+ if(j.state=="running")box.append(el("div",{class:"bar"},el("div",{class:"spin"}),el("b",{},j.title),el("span",{class:"dim"},j.step)),
+  el("div",{class:"prog"+(j.progress?"":" ind"),style:"width:100%"},el("i",{style:j.progress?`width:${100*j.progress[0]/j.progress[1]}%`:""})));
+ else if(j.state=="done"&&(j.kind=="install"||(j.kind=="setup"&&!W.pending))){const h=$("#wdlg h4");if(h)h.textContent="All set";box.append(el("div",{class:"verdict"},"Done. Killcam '99 is ready: open Demos and press Make clips."));
+  const b=$("#wdlg .btns");b.innerHTML="";b.append(el("button",{class:"primary",onclick:()=>{closeWizard();W.started=false;show("demos");loadState()}},"Open Demos"));b.lastChild.focus()}
+ else if(j.state!="running"&&j.state!="done"){box.append(el("div",{class:"verdict bad"},"The setup stopped with a problem. Press ` to read the console, then try again."));W.started=false;
+  const go=$("#wdlg .btns .primary");if(go){go.disabled=false;go.textContent="Try again"}}}
+
+// ---------------- start ----------------
+(async()=>{await loadState();const t=location.hash.slice(1);show(TABS.includes(t)?t:"demos");poll(true);
+ if(!S.game.setup_done)openWizard();
+ setInterval(()=>{if(!CLOSED&&!(JOB&&JOB.state=="running"))loadState()},15000)})();
+</script></body></html>

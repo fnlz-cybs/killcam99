@@ -1,0 +1,19 @@
+# Created when Killcam '99 runs: never part of the repository
+Clips/
+app/data/
+app/UT/
+app/tools/
+app/python/
+app/packs/downloads/
+
+# Release builds and their download cache
+dist/
+tools/_cache/
+
+# Python
+__pycache__/
+*.pyc
+
+# Windows
+Thumbs.db
+desktop.ini
