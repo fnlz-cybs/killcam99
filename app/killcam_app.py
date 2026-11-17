@@ -27,6 +27,7 @@ import kc_config as cfg  # noqa: E402
 cfg.migrate()
 import ut99_dem2video as core  # noqa: E402
 import ut_library as lib  # noqa: E402
+import ut_stream as stream  # noqa: E402
 
 core.SANDBOX = HERE
 
@@ -268,26 +269,40 @@ def start_job(kind: str, body: dict) -> tuple[bool, str]:
                     + (demos or folder)]
             title = (f"Scan {len(demos)} demo(s)" if demos else "Rescan all demos" if body.get("all")
                      else "Scan new demos")
-        elif kind in ("obs", "obs_debug", "obs_rescan"):
+        elif kind in ("obs", "obs_find", "obs_debug", "obs_rescan"):
             files = [str(Path(f)) for f in body.get("files") or []]
+            moments = body.get("moments") or {}  # picked moments: {recording path: [call times]}
             a = ["--obs", st["obs_folder"], *clip_args(st)]
+            if moments:
+                files = [str(Path(f)) for f in moments]
+                mf = OUT / "_work" / "obs_moments.json"
+                mf.parent.mkdir(parents=True, exist_ok=True)
+                mf.write_text(json.dumps({Path(f).name: [float(t) for t in ts] for f, ts in moments.items()}),
+                              encoding="utf-8")
+                a += ["--moments", str(mf)]
             for f in files:
                 a += ["--obs-file", f]
             if st.get("player"):
                 a += ["--player", st["player"]]
             if st["obs_reencode"]:
                 a.append("--obs-reencode")
-            if kind in ("obs_debug", "obs_rescan") or files:
+            if kind == "obs_find" or body.get("find_only"):
+                a.append("--obs-find-only")
+            if kind in ("obs_debug", "obs_rescan"):
                 a.append("--overwrite")
             if kind == "obs_rescan":
                 a.append("--rescan")
             if kind == "obs_debug":
                 a += ["--stream-compare", "--obs-debug"]
             cmds = [py() + [str(CORE), *a]]
-            title = ((f"Read {len(files)} recording(s) again" if files else "Read all recordings again")
+            n_m = sum(len(v) for v in moments.values())
+            title = (f"Cut {n_m} picked moment(s) from {len(files)} recording(s)" if moments else
+                     (f"Read {len(files)} recording(s) again" if files else "Read all recordings again")
                      if kind == "obs_rescan" else
-                     "Compare the screen reading with the demos" if kind == "obs_debug"
-                     else f"Find clips in {len(files)} recording(s)" if files else "Find clips in new recordings")
+                     "Compare the screen reading with the demos" if kind == "obs_debug" else
+                     (f"Find moments in {len(files)} recording(s)" if files else "Find moments in new recordings")
+                     if kind == "obs_find" or body.get("find_only") else
+                     f"Make clips from {len(files)} recording(s)" if files else "Make clips from new recordings")
         elif kind == "watch":
             d = body.get("demo") or ""
             a = ["--watch", d] + (["--at", f"{float(body['at']):.2f}"] if body.get("at") is not None else [])
@@ -430,6 +445,44 @@ def list_demos() -> dict:
     return {"folder": str(folder), "demos": rows, "maps_pending": bool(need_maps)}
 
 
+_REC_CACHE: dict = {}
+
+
+def recording_moments(rec: Path, stt, ns, obs_dir: Path, have: set[str]) -> list[dict]:
+    """The moments worth a clip in a recording that was read before, worked out from the saved
+    reading with the current clip options (the reading itself is never repeated here)."""
+    f = cfg.out() / "stream_scans" / (rec.stem + ".json")
+    try:
+        fm = f.stat().st_mtime
+    except OSError:
+        return []
+    sig = (str(f), fm, json.dumps({k: getattr(ns, k, None) for k in sorted(vars(ns))}, default=str))
+    parts = _REC_CACHE.get(sig)
+    if parts is None:
+        try:
+            r = json.loads(f.read_text(encoding="utf-8"))
+            if r.get("size") != stt.st_size or r.get("mtime") != int(stt.st_mtime):
+                return []  # the recording changed since it was read
+            player = ns.player or r.get("player")
+            if player is None:  # read before player names were saved: work it out once, like the cutter does
+                player = stream.find_player(stream.events_of(r), rec, ns)
+                r["player"] = player
+                tmp = f.with_suffix(".tmp")
+                tmp.write_text(json.dumps(r), encoding="utf-8")
+                os.replace(tmp, f)
+                os.utime(f, (fm, fm))  # same reading: keep its time, so the cache stays valid
+            msgs = stream.recording_messages(r, rec, ns, player)
+            parts = [(a, b, names, t) for a, b, names, t in core.plan_parts(msgs, ns) if b > 0]
+        except Exception:
+            parts = []
+        _REC_CACHE[sig] = parts
+    ext = stream.clip_ext(rec, ns)
+    return [{"t": t, "a": a, "b": b, "labels": [core.display(n) for n in names],
+             "category": core.clip_category(names),
+             "done": core.clip_dest(obs_dir, names, rec.stem, t, ext).name.lower() in have}
+            for a, b, names, t in parts]
+
+
 def list_recordings() -> dict:
     st = settings()
     folder = Path(st["obs_folder"])
@@ -452,6 +505,13 @@ def list_recordings() -> dict:
         if p.suffix.lower() in core.VIDEO_EXTS and p.is_file() and not core.inside(p, cfg.out()):
             files.append(p)
     files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    cns = core_ns(st)
+    cns.player = st.get("player") or ""
+    cns.obs_reencode = st["obs_reencode"]
+    cns.demos = [st["demo_folder"]]  # where the player name can be looked up
+    cd = core.clip_dirs(cfg.out())
+    have = {f.name.lower() for d in (cd["obs_clips"], cd["rejected"]) if d.is_dir() for f in d.rglob("*") if f.is_file()}
+    have |= {Path(x["file"]).name.lower() for x in core.ClipStore(cfg.out()).deleted}
     rows = []
     for p in files[:400]:
         stt = p.stat()
@@ -459,11 +519,14 @@ def list_recordings() -> dict:
         known = by_path.get(str(p))
         status = "new"
         if known:
-            status = "changed" if known[0] != key else ("waiting" if known[1] == "retry" else "checked")
+            status = "changed" if known[0] != key else (
+                "waiting" if known[1] == "retry" else "read" if known[1] == "read" else "checked")
+        moments = recording_moments(p, stt, cns, cd["obs_clips"], have) if status in ("read", "checked") else []
         start, exact = core.recording_start(p, 0)
         rows.append({"name": p.name, "path": str(p), "folder": str(p.parent.relative_to(folder)) if p.parent != folder else "",
                      "size": stt.st_size, "when": start if exact else stt.st_mtime, "status": status,
-                     "clips": clips.get(p.name, 0), "fresh": time.time() - stt.st_mtime < 120})
+                     "clips": clips.get(p.name, 0), "fresh": time.time() - stt.st_mtime < 120,
+                     "moments": moments})
     return {"folder": str(folder), "recordings": rows, "more": max(0, len(files) - 400)}
 
 
@@ -477,6 +540,10 @@ def list_clips() -> dict:
     for x in store.items:
         y = {k: v for k, v in x.items()}
         y["name"] = Path(x["file"]).name
+        try:
+            y["size"] = store.file_of(x["id"]).stat().st_size
+        except OSError:
+            y["size"] = 0
         items.append(y)
     return {"items": items, "folder": str(cfg.clips())}
 
@@ -647,6 +714,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         path, _, query = self.path.partition("?")
         q = dict(x.split("=", 1) for x in query.split("&") if "=" in x)
+        # everything but the page itself, its icon and the 'is it running' ping needs the token the
+        # page carries (header for data, ?t= for <video> sources): nothing else on this PC or in a
+        # browser can read your folders, logs or clips through this server
+        if (path.startswith("/api/") and path != "/api/ping") or path.startswith("/media/"):
+            given = self.headers.get("X-Killcam-Token") or q.get("t") or ""
+            if not hmac.compare_digest(given, TOKEN):
+                self.send_error(403)
+                return
         try:
             if path in ("/", "/index.html"):
                 page = (HERE / "killcam_app.html").read_text(encoding="utf-8").replace("__TOKEN__", TOKEN)
@@ -836,6 +911,15 @@ class Handler(BaseHTTPRequestHandler):
             store = CLIPS["store"] or core.ClipStore(cfg.out())
             ok, msg = store.set_status(int(body.get("id", -1)), body.get("status"))
             self._json({"ok": ok, "status": msg} if ok else {"ok": False, "error": msg})
+        elif path == "/api/clip-delete":
+            store = CLIPS["store"] or core.ClipStore(cfg.out())
+            ids = [int(i) for i in body.get("ids") or []]
+            if body.get("rejected"):
+                ids = [x["id"] for x in store.items if x.get("status") == "rejected"]
+            n, freed, problems = store.delete(ids)
+            CLIPS["store"] = None
+            self._json({"ok": not problems or n > 0, "deleted": n, "freed": freed, "problems": problems,
+                        "error": ("Could not delete: " + ", ".join(problems)) if problems and not n else None})
         elif path == "/api/clip-open":
             store = CLIPS["store"]
             if store:

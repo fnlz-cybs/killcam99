@@ -2469,6 +2469,12 @@ def existing_clip_names(args) -> set[str]:
             d = clip_dirs(root)[sub]
             if d.is_dir():
                 names |= {f.name.lower() for f in d.rglob("*") if f.is_file()}
+        try:  # deleted in the app to free space: counts as made, so it is not recorded again
+            import json
+            names |= {Path(x["file"]).name.lower() for x in json.loads(index_file(args).read_text(encoding="utf-8"))
+                      if x.get("status") == "deleted"}
+        except (OSError, ValueError):
+            pass
         _CLIP_NAMES.update(t=time.time(), root=root, names=names)
     return _CLIP_NAMES["names"]
 
@@ -3987,7 +3993,7 @@ function filters(){const f=document.getElementById("filters");f.innerHTML="";con
 function draw(){filters();const g=document.getElementById("grid");g.innerHTML="";const list=shown();
  document.getElementById("count").textContent=list.length+" clip(s)";
  if(!list.length){g.append(el("div","empty","Nothing here. Try 'All clips' or another filter."));return}
- for(const x of list){const c=el("div","c "+(x.status||""));const v=el("video");v.controls=true;v.preload="metadata";v.src="/media/"+x.id;
+ for(const x of list){const c=el("div","c "+(x.status||""));const v=el("video");v.controls=true;v.preload="metadata";v.src="/media/"+x.id+"?t="+TOKEN;
   const b=el("div","b");b.append(el("div","cat",x.category),el("div","t",(x.labels||[]).join(" + ")),el("div","m",x.origin+" @ "+x.stamp+"  ("+x.source+")"));
   if(x.check)b.append(el("div",x.warn?"w":"q",x.check));
   const a=el("div","a");const k=el("button","keep",x.status=="kept"?"Kept":"Keep");const r=el("button","rej",x.status=="rejected"?"Restore":"Reject");const o=el("button","",x.playable?"Folder":"Open");
@@ -4014,11 +4020,16 @@ class ClipStore:
             items = json.loads(self.idx.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             items = []
-        self.items = [x for x in items if self.path_of(x).exists() or self.rejected_path(x).exists()]
-        if len(self.items) < len(items):  # clips deleted outside the app: forget them for good
+        # 'deleted' = deleted in the app to free space: no file any more, but remembered, so the
+        # same moment is not recorded again (picking it again records it on purpose)
+        self.deleted = [x for x in items if x.get("status") == "deleted"]
+        self.items = [x for x in items if x.get("status") != "deleted"
+                      and (self.path_of(x).exists() or self.rejected_path(x).exists())]
+        if len(self.items) + len(self.deleted) < len(items):  # clips deleted outside the app: forget them
             try:  # read again just before writing, so a clip a running job just added is kept
                 fresh = json.loads(self.idx.read_text(encoding="utf-8"))
-                fresh = [x for x in fresh if self.path_of(x).exists() or self.rejected_path(x).exists()]
+                fresh = [x for x in fresh if x.get("status") == "deleted"
+                         or self.path_of(x).exists() or self.rejected_path(x).exists()]
                 tmp = self.idx.with_suffix(".tmp")
                 tmp.write_text(json.dumps(fresh, indent=1), encoding="utf-8")
                 os.replace(tmp, self.idx)
@@ -4043,7 +4054,16 @@ class ClipStore:
 
     def save(self) -> None:
         import json
-        keep = [{k: v for k, v in x.items() if k not in ("id", "stamp", "playable")} for x in self.items]
+        keep = [{k: v for k, v in x.items() if k not in ("id", "stamp", "playable", "size")}
+                for x in self.items + self.deleted]
+        # clips a running job added since this list was read are kept, not overwritten
+        mine = {x["file"] for x in keep}
+        try:
+            fresh = json.loads(self.idx.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            fresh = []
+        keep += [x for x in fresh if x.get("file") not in mine
+                 and (x.get("status") == "deleted" or self.path_of(x).exists() or self.rejected_path(x).exists())]
         tmp = self.idx.with_suffix(".tmp")
         tmp.write_text(json.dumps(keep, indent=1), encoding="utf-8")
         os.replace(tmp, self.idx)
@@ -4064,6 +4084,33 @@ class ClipStore:
             x["status"] = want
             self.save()
         return True, want
+
+    def delete(self, ids: list[int]) -> tuple[int, int, list[str]]:
+        """Delete these clips' files for good (frees disk space). Returns (deleted, bytes freed,
+        problems). Their list entries stay, marked 'deleted', so they are not made again."""
+        n = freed = 0
+        problems: list[str] = []
+        with self.lock:
+            for i in sorted(set(ids)):
+                if not 0 <= i < len(self.items) or self.items[i].get("status") == "deleted":
+                    continue
+                x = self.items[i]
+                for f in (self.path_of(x), self.rejected_path(x)):
+                    if f.exists():
+                        try:
+                            size = f.stat().st_size
+                            f.unlink()
+                            freed += size
+                        except OSError:
+                            problems.append(f"{f.name} (open in a player?)")
+                            break
+                else:
+                    x["status"], x["deleted_at"] = "deleted", time.time()
+                    n += 1
+            self.deleted += [x for x in self.items if x.get("status") == "deleted"]
+            self.items = [x for x in self.items if x.get("status") != "deleted"]
+            self.save()
+        return n, freed, problems
 
     def open(self, i: int, play: bool) -> None:
         f = self.file_of(i)
@@ -4119,7 +4166,11 @@ def review_server(args, wait: bool = True) -> int:
                 self.end_headers()
                 self.wfile.write(data)
                 return
-            m = re.fullmatch(r"/media/(\d+)", self.path)
+            mpath, _, mq = self.path.partition("?")
+            if not hmac.compare_digest(dict(x.split("=", 1) for x in mq.split("&") if "=" in x).get("t", ""), token):
+                self.send_error(403)
+                return
+            m = re.fullmatch(r"/media/(\d+)", mpath)
             if not m or int(m.group(1)) >= len(items):
                 self.send_error(404)
                 return
@@ -4428,6 +4479,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--obs", nargs="?", const="", default=None, metavar="FOLDER",
                     help="read the HUD messages of stream recordings (OBS / Streamlabs) in FOLDER (default: your Videos "
                          "folder) and cut the same clips as for demos; no demo and no sound needed (see ut_stream.py)")
+    ap.add_argument("--obs-find-only", action="store_true",
+                    help="with --obs: read the recordings and list the moments worth a clip, cut nothing "
+                         "(cut picked ones later with --moments)")
     ap.add_argument("--obs-track", type=int, default=None,
                     help="only use this sound track of the recordings (1 = first); default: all tracks")
     ap.add_argument("--obs-debug", action="store_true",

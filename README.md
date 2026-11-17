@@ -36,12 +36,13 @@ Multi Kills · Monster Kills · Ludicrous · Holy Shit · Godlike sprees · flag
   - [Updating and uninstalling](#updating-and-uninstalling)
 - [How it works](#how-it-works)
   - [The big picture](#the-big-picture)
+  - [How a moment is recognised, in plain words](#how-a-moment-is-recognised-in-plain-words)
   - [Architecture diagram](#architecture-diagram)
   - [From demo to clip: the pipeline](#from-demo-to-clip-the-pipeline)
   - [The in-game add-on (UT2VidHook)](#the-in-game-add-on-ut2vidhook)
   - [Parallel scans](#parallel-scans)
   - [Recording a clip](#recording-a-clip)
-  - [Clips from stream recordings](#clips-from-stream-recordings)
+  - [Clips from stream recordings (screen reading / OCR)](#clips-from-stream-recordings-screen-reading--ocr)
   - [Packages: exact versions by GUID](#packages-exact-versions-by-guid)
   - [The two setup modes](#the-two-setup-modes)
   - [The app: a local web window](#the-app-a-local-web-window)
@@ -93,7 +94,9 @@ base pack, or online, and tells you precisely (down to the GUID) what is still m
 | **Only your moments** | Only *your own* announcer calls count; other players' sprees never make a clip. |
 | **Fast** | Kill-finding runs at ~35–40× real time, several demos side by side. A 15-minute demo is searched in under 30 seconds. |
 | **Background recording** | Uses ffmpeg's Windows Graphics Capture (`gfxcapture`, ffmpeg 8.1+): you can keep working while it records. |
-| **OBS / Streamlabs** | Cuts clips straight from stream recordings by reading the on-screen kill messages (Windows' built-in OCR). |
+| **OBS / Streamlabs** | Cuts clips straight from stream recordings by reading the on-screen kill messages with Windows' built-in text recognition (OCR). No demo, no game, no sound analysis. |
+| **Pick your moments** | Demos *and* recordings list every moment worth a clip first; click the ones you want and only those are recorded or cut. Picking from a recording takes seconds, because its reading is saved. |
+| **Free disk space** | Delete clips you do not want (one by one, or every rejected clip at once) and see how much space your clips take. Deleted clips are remembered and not made again. |
 | **Exact packages** | GUID-exact package tracking, a 137-version base pack, your own folders, and online search (redirect servers, Wayback Machine, GitHub releases). |
 | **Safe with your game** | Either a separate copy of UT (your folder is only read), or your own folder with a byte-for-byte undo. |
 | **Self-contained** | Unzip and double-click. Python is bundled; ffmpeg is downloaded once by the setup. Nothing is installed on the PC. |
@@ -220,23 +223,51 @@ Status labels: *Not looked at* · *To record* · *Partly recorded* · *Recorded*
 
 ### Recordings (OBS / Streamlabs)
 
-1. Point the folder at the top to where OBS or Streamlabs saves (*Change*).
-2. Press **Make clips from new recordings**. Reading takes about a quarter of each recording's length.
-3. Clips go to **`Clips\Recordings\`**.
+Point the folder at the top to where OBS or Streamlabs saves (*Change*). Then either:
 
-*Your player name*: leave empty to detect it, or type the name used in those recordings.
+- **Make clips from new recordings**: reads every new recording (about a quarter of its length) and cuts every
+  moment worth a clip; or
+- **Find moments in new recordings**: reads them but cuts nothing. Each recording then lists its moments as chips,
+  like `13:29 Multi Kill + Flag Carrier Kill + Flag Return`, with a tick on the ones already cut. Click the moments
+  you want (they turn blue) and press **Cut these moments** in the bar that appears. Cutting picked moments uses the
+  saved reading, so it takes seconds.
+
+| Element | What it does |
+|---|---|
+| **Moments worth a clip** | Worked out from the saved reading with your *current* clip options: change a trigger or the clip length and the list follows, without reading the recording again. |
+| **Find moments** (per row) | Read one new recording and list its moments. |
+| **Cut all** (per row) | Cut every moment of that recording that is not cut yet (deleted clips are not brought back). |
+| **Read again** | Read a recording from scratch and list its moments again; nothing is cut, your clips stay. |
+| Status | *Not read yet* · *Moments found* (read, nothing cut) · *Clips made* · *still being written?* (a recording OBS is still writing is skipped until it is finished) |
+
+Clips go to **`Clips\Recordings\`**.
+
+*Your player name*: leave empty to detect it, or type the name used in those recordings. The name that was found
+is remembered per recording, so the moments shown are the same ones that get cut.
 *Exact cuts*: frame-exact starts by re-encoding (slower).
-*Read again*: reads a recording from scratch (otherwise a saved reading is reused).
 
 ### Clips
 
-All clips, playable right in the window, with counters (clips, not reviewed yet, kept, rejected) and filters
-(kind of moment, state, demos vs recordings).
+All clips, playable right in the window, with counters (clips, not reviewed yet, kept, rejected, space on disk) and
+filters (kind of moment, state, demos vs recordings).
 
-- **Keep** marks a clip as good.
-- **Reject** moves it to `Clips\Rejected\` (it is not made again); **Restore** moves it back.
-- Deleting a clip file in Explorer is fine too: a *deleted* clip (unlike a rejected one) is made again the next
-  time you make clips from that demo.
+| Element | What it does |
+|---|---|
+| **Counters** | Clips, not reviewed yet, kept, rejected, and the space your clips take **on disk**. |
+| **Filters** | Kind of moment (Monster Kill, Flag Return, ...), state (not rejected, not reviewed yet, kept, with a warning, rejected, everything), and source (demos, recordings or both). |
+| **Keep** | Marks a clip as good. It stays where it is. |
+| **Reject** | Moves the clip to `Clips\Rejected\`. A rejected clip is not made again. |
+| **Restore** | Moves a rejected clip back. |
+| **Delete** (red bin) | Deletes the clip file for good to free disk space. A confirmation shows what is deleted and how much space it frees, and that it cannot be undone. |
+| **Delete rejected** | Appears when there are rejected clips: deletes all of them at once, showing their number and total size first. |
+| **Open clips folder** | Opens `Clips\` in Explorer (Demos, Recordings and Rejected are inside). |
+| Folder icon | Shows that one clip in Explorer. |
+| Warning text | A clip with a possible problem (for example *choppy*, or a multi kill level worked out from the kill times because its text could not be read) says so under its title. |
+
+**Deleted clips are remembered.** Their entry stays in the clip list with the state *deleted* (the file is gone).
+*Make clips* treats such a moment as done, so it is not recorded or cut again; picking that moment again on purpose
+makes a new clip. Deleting a clip file in Explorer works too, but such a clip is *not* remembered and is made again
+the next time you make clips from that demo or recording.
 
 ### Packages
 
@@ -312,6 +343,51 @@ UT folder in direct mode, which *Remove* undoes).
        │      seek to each part, play at 1×, corner marker on       ▼
        └──────────────────────────────────────────────── ffmpeg gfxcapture + WASAPI
 ```
+
+### How a moment is recognised, in plain words
+
+Unreal Tournament itself tells every player what just happened, in three lines of text in the middle of the
+screen, and the announcer says it out loud. Killcam '99 never guesses from the action: it only follows those
+messages, like a referee writing down every call.
+
+- **"You killed Bob"** means you scored a kill.
+- **"Double Kill!", "Multi Kill!", "Ultra Kill!", "Monster Kill!"** (red) mean you killed two, three, four or
+  five players, each within about 3 seconds of the last one.
+- **"... is on a killing spree / rampage / dominating / unstoppable / godlike"** means 5, 10, 15, 20, 25 kills in a
+  row without dying.
+- **"... returns / captured / dropped / has the flag"** are the flag plays.
+
+```mermaid
+flowchart TD
+    A(["A demo or a recording"]) --> B{"Where do the messages come from?"}
+    B -- "demo" --> C["The game plays the demo at 40x speed.<br/>Our add-on writes down every message<br/>with the exact second. Nothing to guess."]
+    B -- "recording" --> D["Killcam '99 looks at the message lines<br/>a few times per second and reads the text<br/>(Windows' own text recognition)."]
+    D --> E["Clean up the reading:<br/>one message seen in many pictures is one message;<br/>a fading text read wrongly is still that message;<br/>warm-up before the match does not count."]
+    C --> F["Keep only what is about YOU:<br/>your kills, your multi kills, your sprees,<br/>your flag returns and captures."]
+    E --> F
+    F --> G{"Is it worth a clip?<br/>(your choices in Options, Clips)"}
+    G -- "no" --> H(["ignored"])
+    G -- "yes" --> I["A moment: from a few seconds before<br/>the first kill of the streak to a few<br/>seconds after the last one."]
+    I --> J{"Did something else happen<br/>right after? (flag return, capture,<br/>flag carrier killed)"}
+    J -- "yes" --> K["One longer clip that includes it"]
+    J -- "no" --> L["The clip"]
+    K --> L
+    L --> M(["Clips folder"])
+```
+
+**When the screen does not show everything** (a recording only): sometimes a message is hidden behind a bright
+wall or pushed away by the next one. Killcam '99 then fills in only what the game's own rules *prove*:
+
+| What was seen | What it proves | Example |
+|---|---|---|
+| "Ultra Kill!" | there was a Double Kill and a Multi Kill on the way, at the kills before it | the Double Kill text was hidden behind a red banner |
+| "... is on a rampage!" | the killing spree before it (5 kills earlier) | a flag message pushed the spree line away |
+| "Double Kill!" while the kill line still shows the same name | the same player was killed again (instant respawn) | you killed Bob, he respawned, you killed him again |
+| two clearly different names on the kill line within about 2.5 s, shown without a gap, but no readable red text | a Double Kill (the clip is marked "worked out from the kill times") | the red text was unreadable on a bright background |
+
+And what it does **not** do: a name that changes while the text is fading (for example "Raven42", then "Rava",
+then "Raven42" again) is one kill read three times, not three kills. A faint scrap of text is never taken as a
+multi kill. When in doubt, Killcam '99 rather misses a moment than invents one.
 
 ### Architecture diagram
 
@@ -468,19 +544,155 @@ so they cannot be shared). A watchdog stops an instance that stops moving; `run_
 - **Quality check:** each clip is checked (distinct frames per second etc.); a choppy clip gets a *CHECK* warning,
   shown on the clip card.
 
-### Clips from stream recordings
+### Clips from stream recordings (screen reading / OCR)
 
-`ut_stream.py` turns a video into the same message list a demo scan produces, then hands it to the same planner:
+A stream recording shows the same three HUD message lines a demo carries, so Killcam '99 reads them from the
+picture and turns them into the **same message list a demo scan produces**. From there on, recordings and demos
+share one planner (`plan_parts`) and one cutter: a recording of a match gets the same clips, with the same lead-in
+and run-out, as the demo of that match would. No demo, no game and no sound analysis are used.
 
-1. **frames**: ffmpeg cuts only the HUD message area out of the video, a few frames per second;
-2. **reading**: the text colour is separated from the background and **Windows' built-in OCR**
-   (`Windows.Media.Ocr`) reads many frames at once;
-3. **tracking**: readings of the same message in consecutive frames become one message;
-4. **messages**: kill lines (cyan), info lines (flag events, sprees) and multi kills (red) become demo-style
-   messages;
-5. **clips**: `plan_parts()` + the same cutter as for demos (stream copy, or re-encode for *Exact cuts*).
+```
+  You killed pixelfox                      <- kill line   (cyan)   your kill, and who
+  BlueSky^ returns the red flag!            <- info line   (cyan)   flag events, killing sprees
+  Multi Kill!                              <- multi line  (red)    multi kill level
+```
 
-Results are cached per recording (`work\stream_scans`), so changing clip options re-cuts without re-reading.
+```mermaid
+flowchart LR
+    V["recording<br/>.mp4 / .mkv"] --> F["1 frames<br/>ffmpeg crops the message area<br/>+ the match clock, 6 frames/s"]
+    F --> S["2 sieve<br/>colour layers (cyan, red),<br/>local contrast, 'may hold text?'"]
+    S -->|"most frames: no text"| X(("skipped"))
+    S -->|"text-like frames"| B["3 batch<br/>24 strips stacked into<br/>one picture (BMP)"]
+    B --> O["4 OCR<br/>Windows.Media.Ocr<br/>(PowerShell helper, en-US)"]
+    O --> I["5 interpret<br/>fuzzy match each line:<br/>kill / death / spree / flag / multi"]
+    I --> T["6 track<br/>same message in many frames<br/>= one message, first moment"]
+    T --> N["7 names<br/>one spelling per player,<br/>find your own name"]
+    N --> W["8 match only<br/>drop warm-up and post-match<br/>(clock standing still)"]
+    W --> M["9 messages<br/>demo-scan format + streaks,<br/>implied sprees and multi kills"]
+    M --> P["plan_parts<br/>(same as demos)"]
+    P --> C["cut: stream copy<br/>or re-encode"]
+    I -. "raw readings saved" .-> J[("work/stream_scans/(recording).json")]
+    J -. "reused: new clip options,<br/>picking, Read again not needed" .-> T
+```
+
+**1. Frames.** ffmpeg decodes the recording once and, at 6 frames per second (`--stream-fps`), crops two small
+areas: the **message area** (1000 x 125 pixels at 240 px from the top, centred, for a 1920 x 1080 picture; other
+sizes are scaled) enlarged 1.5x with Lanczos for sharper letters, and the **match clock** (bottom, left of the
+middle). Both arrive in one raw RGB stream, so the video is read once. A HUD in another place (for example the game
+shown smaller inside a stream layout) is set with `--stream-area X,Y,W,H` and `--stream-clock X,Y,W,H`, given for
+1920 x 1080.
+
+**2. The sieve (most frames never reach the OCR).** For every frame two colour layers are computed with numpy:
+*cyan-ness* (blue and green above red: the kill and info lines) and *red-ness* (red above green and blue: the multi
+kill text). Each layer is then reduced to **local contrast** (the value minus the average of the area around it),
+so a flat blue wall or red banner behind the text drops out and only thin strokes, the letters, remain. A frame goes
+on to the OCR only when enough such strokes sit in the middle part of the area, where every HUD message is centred.
+Measured on real recordings: frames with a readable message have 160+ stroke pixels, 3 out of 4 frames without a
+message have under 25. Frames with red strokes are sent twice: once as the plain picture, and once as a
+**red print** (the red strokes as dark text on white), which reads a faint multi kill text over a bright wall that
+the plain picture misses.
+
+**3. Batching.** Calling the OCR per frame would be slow, so up to 24 strips are stacked into one picture with
+white gaps between them (limited by the engine's maximum picture size), written as a plain 24-bit BMP (no imaging
+library needed). Each recognised line is mapped back to its strip, and so to its frame time, by its vertical
+position. Lines that are not centred are ignored: every HUD message is centred.
+
+**4. OCR: Windows' own text recognition.** `Windows.Media.Ocr`, the engine built into Windows 10 and 11, runs in a
+small **PowerShell helper process** that stays open for the whole recording: Python writes a picture path to its
+input, the helper answers with one line per recognised text line (its box and its text) and an end marker. It
+prefers the **English (en-US)** recognizer and falls back to your profile languages; if no recognizer is installed,
+the job stops with a clear message (*Settings > Time & language > Language > add English*). Nothing is installed
+and nothing leaves your PC: the OCR runs locally and offline.
+
+**5. Interpreting a line.** OCR output is never exact, so every line is matched **fuzzily** (similarity ratios on
+the letters only). A red line is only taken as a multi kill when it has real red in it (real ones measure 65 or more,
+anything under 30 is ignored) and is not a piece of the kill line (`ou kill` from `You killed` once matched
+`Double Kill`):
+
+| Line | Recognised when it resembles | Becomes |
+|---|---|---|
+| red | `Double Kill`, `Multi Kill`, `Mega Kill`, `Ultra Kill`, `Monster Kill`, `Ludicrous Kill`, `Holy Shit` (74 %+) | a multi kill of that level |
+| cyan | `You killed <name>` | your kill, and the victim |
+| cyan | `You were killed by <name>` | your death, and the killer |
+| cyan | `<name> is on a killing spree / rampage / dominating / unstoppable / godlike / wicked sick` | a spree level, and who |
+| cyan | `<name> returns / dropped / captured / has the ... flag` | a flag event, and who |
+
+Typical OCR confusions are folded together before names are compared: `l`, `I` and `1` count as the same letter,
+`0` as `o`, `5` as `s`, `rn` as `m`, `vv` as `w`, and `ivi` as `m` (so `Marble` read as `lVlarble` still matches).
+
+**6. Tracking.** A message stays on screen about 3 seconds, so it is read in many frames. Readings of the same
+message on the same line become **one message at the moment it first appeared**. A message never comes back once a
+newer one has replaced it, so anything read on that line in between is a misreading and is dropped. A name read
+only once or twice in the whole recording is a misreading too. A multi kill text read in a single frame is kept
+only when one of your kills is right there.
+
+A message **fades** while it is shown, and a fading text is often misread: `You killed Raven42` turns into
+`You killed Rava` and back. A new message, on the other hand, always arrives **fresh and bright**. So on the kill
+line and the multi kill line, a different reading that follows the shown message without a break and is clearly
+fainter (under 80 % of that message's brightest reading) counts as the same message, misread. On the kill line this
+needs the names to look alike as well (same first letters, one inside the other, or mostly the same letters), so a
+real kill of someone else that happens to be read faintly is still a new kill.
+
+**7. Names.** Each player gets one spelling: every reading is mapped to the spelling seen most often, including
+readings where one name contains the other (`LNightOwl.CLN-` and `NightOwl`: a stray letter or a clan tag read along,
+or a part cut off). Your own
+name, the hardest to read (clan tags full of brackets), is found in this order: your *player name* setting, then
+the recording itself (a spree announcement that appears together with one of your kills names you), then the name
+your demo files of that day start with. The name found is **saved with the reading**, so the moments the app shows
+are exactly the ones that get cut.
+
+**8. Match only.** The match clock is watched second by second: if its last digit changes, the match is running.
+Pixels are combined over all frames of a second (majority vote) to remove flicker from moving backgrounds. Stretches
+where the clock stands still (warm-up before the match, the time after it) are left out, so warm-up kills never
+make a clip. (`--include-warmup` keeps them.)
+
+**9. Messages and streaks.** The tracked messages become demo-style messages (kills, deaths, multi kills, sprees,
+flag events with *your* ones marked). Then what the screen cannot show directly is worked out:
+
+- every multi kill text is tied to the kill that caused it; if the kill line still shows the same victim, that
+  victim was killed **again** (instant respawn), and that kill is added;
+- a multi kill level that *was* read proves the levels below it: an Ultra Kill read at the fourth kill of a
+  streak adds the Double Kill and Multi Kill at the second and third kill, when those texts were hidden (only when
+  the streak's kills add up to exactly that level);
+- a streak whose red text was unreadable (bright background) is rebuilt **from the kill times**, but only under
+  strict conditions: gaps under 2.6 s, kills each read at least twice, names that are clearly *different* (not two
+  readings of one name), and the kill line showing the earlier kill right up to the later one (if it was unreadable
+  in between, the earlier kill may have happened well before its first readable moment, so the gap only looks
+  short). Such clips carry the note *multi kill level worked out from the kill times*;
+- a spree level that *was* read proves the levels below it (they happened 5, 10, ... kills earlier), so those are
+  added even when another message pushed them off the screen.
+
+**10. Saved readings.** Only the raw readings (time, line, text, strength) and the clock are saved, in
+`app\data\work\stream_scans\<recording>.json`, with the recording's size and date. Steps 6 to 9 run again from
+that file every time, so better rules, new clip options, the moment list in the app and picked cuts all work
+**without reading the video again**. A recording is read again only when it changed, when you press *Read again*,
+or with `--rescan`.
+
+**Measured accuracy.** Five OBS recordings were compared with the demos of the same eight matches (the demos are
+exact, so they are the reference). The developer tool *Compare with the demos* (Recordings page, with developer tools
+on) runs this comparison for any recording that has a demo of the same match.
+
+| Your ... | In the demos | Found on screen | Missed | Wrong (extra) |
+|---|---|---|---|---|
+| kills | 837 | 786 (94 %) | 51 | 50 |
+| multi kills | 186 | 181 (97 %) | 5 | 4 |
+| sprees | 42 | 39 | 3 | 1 |
+| flag returns | 52 | 43 | 9 | 0 |
+| **clips** | **16** | **16** (all covered) | **0** | **0** |
+
+Every clip the demos plan is found, and no clip is made that the demos do not plan. The misses are moments where
+neither the red text nor the name on the kill line was readable in any frame; the extras that remain are counting
+differences (for example a multi kill tied to a kill one second off), not extra clips. Version 1.2 removed a wrong
+*Multi Kill* clip that 1.1 made from a single kill whose fading name was read three different ways (extra kills
+went from 86 to 50, wrong multi kills from 9 to 4).
+
+**Speed.** Reading takes about a quarter of the recording's length, most of it in the OCR. The sieve keeps that
+manageable: in a typical match only a small share of frames holds a message.
+
+**Recording workflow.** *Make clips from new recordings* reads and cuts every moment; *Find moments* reads only
+(the recording's status becomes *Moments found*, ledger status `read`) and the app lists the moments; *Cut these
+moments* passes the picked times (`--moments`) and cuts only those, from the saved reading. A recording that OBS
+wrote to in the last 2 minutes is skipped as *still being written*.
 
 ### Packages: exact versions by GUID
 
@@ -540,8 +752,9 @@ your `UnrealTournament.exe`.
 - it refuses requests whose `Host` is not `127.0.0.1`/`localhost` (DNS-rebinding protection);
 - it refuses requests the browser marks as coming from another site (`Sec-Fetch-Site: cross-site`/`same-site`),
   so other web pages can neither call the API nor embed your clips in a `<video>`;
-- every `POST` needs a random per-start **token** embedded in the page (other sites cannot drive it), compared in
-  constant time, with request bodies capped at 1 MB;
+- every request except the page itself, its icon and `/api/ping` needs a random per-start **token** embedded in
+  the page: `POST` bodies carry it, data requests send it as an `X-Killcam-Token` header, and clip videos as a
+  `?t=` parameter. It is compared in constant time, and request bodies are capped at 1 MB;
 - the separate stand-alone review page (`--review`) applies the same checks;
 - the page is one static HTML file with plain JavaScript (no framework, no build step);
 - it opens in **Microsoft Edge app mode** (`--app=`), a window without tabs or address bar, else the default browser;
@@ -582,6 +795,16 @@ Killcam99\
 
 All JSON files are written atomically (`*.tmp` + `os.replace`). There is no database: the data is small, human
 readable and survives crashes.
+
+| Work file | Holds |
+|---|---|
+| `scans\<demo>.json` | every HUD message of a demo scan, with exact demo times |
+| `stream_scans\<recording>.json` | the raw screen readings and clock of a recording, plus the player name found |
+| `clip_index.json` | every clip: file (relative to `Clips\`), source, origin, labels, time, check note, and state `new`, `kept`, `rejected` or `deleted` (file gone, remembered so it is not made again) |
+| `parts_done.txt` | which parts of which demo were recorded (a part is done when a recorded part covers 80 % of it and its clip exists, or was deleted in the app) |
+| `obs_processed.txt` | per recording (size, date, path): `read` (moments found, nothing cut) or `done` (clips made) |
+| `_work\moments.json`, `_work\obs_moments.json` | the moments picked in the app for the next job |
+| `events.txt`, `check.txt` | a plain log of every moment found, and of clips with a quality warning |
 
 ---
 
@@ -721,11 +944,18 @@ Every non-obvious choice, with what was considered and why it went this way.
 </details>
 
 <details>
-<summary><b>13. Stream recordings: Windows' own OCR</b></summary>
+<summary><b>13. Stream recordings: Windows' own OCR, behind a cheap sieve</b></summary>
 
-- **Options:** Tesseract (extra install, worse on this font), a trained model (heavy), Windows.Media.Ocr.
-- **Choice:** the OCR built into Windows 10/11, fed with colour-isolated crops of the message area, many frames per
-  call. Then the *same* planner as demos, so a recording gets the same clips the demo would.
+- **Options:** Tesseract (extra install, weaker on this HUD font), a trained model (heavy, a download), or
+  `Windows.Media.Ocr` (part of Windows 10/11, offline, good on clean UI text).
+- **Choice:** Windows' OCR in a long-lived PowerShell helper, fed with batches of colour-separated strips. A numpy
+  sieve (colour layers + local contrast + a stroke count) decides which frames are worth reading at all, which is
+  what makes reading a match take minutes instead of hours.
+- **Robustness over exactness:** fuzzy matching of every line, OCR look-alikes folded together, tracking that drops
+  readings a newer message proves wrong, and streak/spree rules that infer what the screen hid. Then the *same*
+  planner as demos, so a recording gets the same clips the demo would.
+- **Trade-off:** needs an English (or similar) recognizer language in Windows; a HUD at a non-standard place needs
+  `--stream-area`/`--stream-clock`.
 </details>
 
 <details>
@@ -750,6 +980,45 @@ Every non-obvious choice, with what was considered and why it went this way.
 
 - JSON and text files, written atomically. Small data, inspectable by players and developers, no corruption on a
   hard stop, trivially backed up. A demo or clip deleted outside the app is simply forgotten on the next read.
+</details>
+
+<details>
+<summary><b>17. Pick before you cut: save the reading, not the result</b></summary>
+
+- **Problem:** reading a recording is the slow step (minutes); deciding which moments are worth keeping is the
+  player's call.
+- **Choice:** split reading from cutting. *Find moments* saves the raw readings; the app recomputes the moments from
+  them on every view, with the current clip options, and a picked cut reuses the saved reading (seconds). The same
+  pattern as demos, where the 40x scan is saved and recording is a separate step.
+- **Consequence:** changing a trigger or the clip length updates the moment list immediately, and the player name
+  found while reading is stored with the reading so the list and the cut always agree.
+</details>
+
+
+<details>
+<summary><b>18. Delete, but remember</b></summary>
+
+- **Problem:** players want disk space back, but a clip whose file simply disappears looks like a moment that was
+  never recorded, so the next *Make clips* would record it again.
+- **Choice:** *Delete* removes the file and keeps the clip-list entry with the state `deleted`. The recorder and the
+  cutter both treat deleted clips as done; picking the moment again is the explicit way to get it back. Saving the
+  clip list merges entries a running job added meanwhile, so deleting during a job loses nothing.
+</details>
+
+<details>
+<summary><b>19. Fading text is the same message; rather miss than invent</b></summary>
+
+- **Problem:** a recording made a *Multi Kill* clip out of one kill: while the kill message faded, its name was read
+  as `Raven42`, `Rava`, `Raven42`, and each change of name looked like a new kill; three kills within 2.6 s then
+  "proved" a multi kill.
+- **Options:** require more frames per name (loses real quick kills); merge all similar names globally (merges real
+  players with similar names); use what the HUD itself does: a new message replaces the old one at full brightness.
+- **Choice:** brightness and continuity. A different reading right after the shown message that is clearly fainter
+  is that message, misread (kill line: only for names that look alike). The kill-times rule now also requires
+  clearly different names and an unbroken view of the earlier kill. To keep the hidden-level cases that the phantom
+  kills used to cover by accident, a read multi kill now implies the lower levels at the kills before it.
+- **Checked against the demos:** extra kills 86 to 50, wrong multi kills 9 to 4, missed multi kills 6 to 5, and
+  the clip plan of all five recordings matches the demos exactly.
 </details>
 
 ---
@@ -842,7 +1111,15 @@ The version lives in `app/kc_config.py` (`VERSION`).
 |---|---|
 | `--scan` | find kills only (fast, nothing recorded) |
 | `--clips-only --scan-first` | find kills, then record only the moments (what *Make clips* runs) |
-| `--obs [FOLDER]` | clips from OBS/Streamlabs recordings |
+| `--obs [FOLDER]` | clips from OBS/Streamlabs recordings (all new recordings in FOLDER) |
+| `--obs-file FILE` | only this recording (repeatable) |
+| `--obs-find-only` | read recordings and list their moments, cut nothing (status `read`) |
+| `--moments FILE` | record or cut only these moments: JSON `{file name: [call times in seconds]}`; works for demos (with `--scan-first`) and recordings |
+| `--rescan` | read recordings again even when a saved reading exists |
+| `--obs-reencode` | exact cuts (re-encode) instead of a stream copy |
+| `--stream-fps N` | frames per second read from recordings (default 6) |
+| `--stream-area X,Y,W,H`, `--stream-clock X,Y,W,H` | where the HUD messages and the match clock are, for a 1920 x 1080 picture |
+| `--include-warmup` | also count kills made while the match clock stood still |
 | `--watch DEMO [--at SECONDS]` | watch a demo (or one moment) in the game |
 | `--only TEXT`, `--limit N` | only demos whose name contains TEXT; at most N |
 | `--overwrite` | redo demos/parts already done |
@@ -864,6 +1141,11 @@ The version lives in `app/kc_config.py` (`VERSION`).
 | `the game could not start the demo; closing it to try again` | fail-fast retry of a scan instance |
 | `Cannot play demo due to missing packages: X` | UT's own message; see *Packages → Missing* |
 | `CHECK: choppy (UT drew few frames)` | a clip may stutter; shown on the clip card |
+| `N moment(s) worth a clip found (nothing cut yet)` | *Find moments* read a recording; pick moments in the app |
+| `skipped (still being written?): <recording>` | OBS wrote to it in the last 2 minutes; it is read once it is finished |
+| `your player name, read from the screen: <name>` | the name used to tell your sprees and flag plays from others' |
+| `match clock standing still (warm-up / after the match): ...` | those stretches are left out of a recording |
+| `Windows text recognition could not be started` | no OCR language installed: add English in Windows' language settings |
 
 ---
 
@@ -881,6 +1163,12 @@ The version lives in `app/kc_config.py` (`VERSION`).
 | A folder dialog does not appear | It may be behind the window; check the taskbar. |
 | A game window stays open after Stop | Close it; leftovers are closed on the next start. Your own UT is never closed. |
 | Two scan windows, one idle | Fixed in 1.1: games now load one at a time, failures retry within seconds. |
+| A recording shows *still being written?* | OBS wrote to it in the last 2 minutes. Finish or stop the recording, wait a moment, then *Find moments*. |
+| *Windows text recognition could not be started* | Add English in *Settings > Time & language > Language* (the recognizer comes with it). |
+| A recording finds no or too few moments | Check *Your player name* on the Recordings page, then *Read again*. If your stream layout shows the game smaller or moved, set `--stream-area` / `--stream-clock`. |
+| A recording made a clip that the match did not have | Version 1.2 fixed the known cause (one fading kill read as several). Moments are worked out again from the saved reading, so the wrong moment simply no longer appears; delete the old clip with *Delete*. |
+| A recording clip is labelled from the kill times | The red multi kill text was unreadable (bright background); the level was worked out from your kill times. Check the clip. |
+| A deleted clip came back | It was deleted in Explorer, not with *Delete* in the app; only the app remembers deletions. |
 | Bug report | *Help → Copy diagnostics* and paste it into an issue. |
 
 ## FAQ
@@ -903,6 +1191,8 @@ Windows OCR.
 ## Known limitations and roadmap
 
 - Windows only; needs the 469 patch.
+- Reading recordings needs a Windows OCR language (English is preferred) and the standard HUD position (or
+  `--stream-area`); very bright backgrounds can hide the red multi kill text (the level is then inferred).
 - Recording is real-time per moment; sound is the device mix (other apps are recorded too).
 - Not code-signed (SmartScreen warning on first start).
 - Planned: update check, signed launcher/installer, per-clip trimming in the review page, upload presets,
@@ -916,7 +1206,8 @@ Killcam '99 connects to the internet **only** for:
 - searching for missing packages when you ask for it (UT redirect servers, `web.archive.org`, GitHub releases of
   known mods).
 
-The app window is served on `127.0.0.1` only and cannot be reached from other computers. No telemetry, no
+Reading recordings uses Windows' own text recognition on your PC, offline; no picture or text from your
+recordings leaves it. The app window is served on `127.0.0.1` only and cannot be reached from other computers. No telemetry, no
 accounts, nothing about you or your demos is sent anywhere.
 
 ## Contributing

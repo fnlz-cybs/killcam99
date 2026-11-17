@@ -301,9 +301,12 @@ button.spinning svg{animation:sp .8s linear infinite}
       <button class="small" data-pick="obs">Change</button><button class="small ghost" data-open="recordings">Open</button></span>
   </div>
   <div class="actions">
-    <div class="act main"><div class="ic"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m22 8-6 4 6 4z"/></svg></div>
-      <div class="body"><h3>Make clips from recordings</h3><p>Reads the kill messages from the picture of each new recording and cuts the clips. The game is not needed; it takes about a quarter of the recording's length.</p>
-      <div class="btnrow"><button class="primary" id="go-obs" data-help="Read every new recording and cut its clips.">Make clips from new recordings</button><button id="go-obsrescan" data-help="Read every recording again from scratch and cut its clips again.">Read all again</button></div><div class="meta" id="obs-meta"></div></div></div>
+    <div class="act main"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/></svg></div>
+      <div class="body"><h3>Make clips</h3><p>Reads the kill messages from the picture of each new recording and cuts every moment worth a clip. The game is not needed.</p>
+      <button class="primary" id="go-obs" data-help="Read every new recording (about a quarter of its length) and cut all its moments worth a clip.">Make clips from new recordings</button><div class="meta" id="obs-meta"></div></div></div>
+    <div class="act"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div>
+      <div class="body"><h3>Find moments</h3><p>Reads the recordings but cuts nothing. Shows the moments per recording, so you can pick which to cut.</p>
+      <div class="btnrow"><button id="go-obsfind" data-help="Read every new recording and list its moments. Nothing is cut.">Find moments in new recordings</button><button id="go-obsrescan" data-help="Read every recording again from scratch and list its moments again. Nothing is cut; your clips stay.">Read all again</button></div><div class="meta" id="obsfind-meta"></div></div></div>
     <div class="act dev"><div class="ic"><svg viewBox="0 0 24 24"><path d="M2 12h3l3-8 4 16 3-8h7"/></svg></div>
       <div class="body"><h3>Compare with the demos</h3><p>Developer check: where a demo of the same match exists, lists what the demo has and what was read from the screen.</p>
       <button id="go-obsdebug">Compare with demos</button></div></div>
@@ -315,8 +318,11 @@ button.spinning svg{animation:sp .8s linear infinite}
     <div class="spacer"></div><input class="search" id="rq" placeholder="Search recordings"><span class="dim2" id="rcount"></span>
     <button class="small ghost" data-refresh="recs" data-help="Look at the recordings folder again."><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Refresh</button>
   </div>
+  <div class="selbar" id="rsel"><b id="rseln"></b><span class="dim" id="rseldone"></span>
+    <button class="primary small" id="rsel-cut">Cut these moments</button>
+    <div class="spacer"></div><button class="small ghost" id="rsel-clear">Clear</button></div>
   <div class="tablewrap"><table>
-    <thead><tr><th>Recorded</th><th>File</th><th>Size</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Recorded</th><th>File</th><th data-help="Click a moment to pick it for cutting. A tick means it is cut already.">Moments worth a clip</th><th>Status</th><th></th></tr></thead>
     <tbody id="rbody"><tr><td colspan="5" class="empty">Loading ...</td></tr></tbody></table></div>
   </div>
 </section>
@@ -332,7 +338,7 @@ button.spinning svg{animation:sp .8s linear infinite}
     <select id="cstate" data-help="Which clips to show."><option value="open">Not rejected</option><option value="new">Not reviewed yet</option><option value="kept">Kept</option><option value="warn">With a warning</option><option value="rejected">Rejected</option><option value="all">Everything</option></select>
     <select id="csrc" data-help="Clips made from demos, from recordings, or both."><option value="all">From demos and recordings</option><option value="demo">From demos</option><option value="obs">From recordings</option></select>
     <div class="spacer"></div>
-    <button class="small" data-open="all_clips" data-help="Open the Clips folder: Demos, Recordings and Rejected are inside.">Open clips folder</button>
+    <button class="small danger" id="del-rejected" hidden data-help="Delete every rejected clip for good, to free disk space. They are not made again.">Delete rejected</button><button class="small" data-open="all_clips" data-help="Open the Clips folder: Demos, Recordings and Rejected are inside.">Open clips folder</button>
     <button class="small ghost" data-refresh="clips" data-help="Look for new clips."><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Refresh</button>
   </div>
   <div class="grid" id="cgrid"></div>
@@ -485,9 +491,11 @@ const ICON={play:'<svg viewBox="0 0 24 24"><path d="m6 4 14 8-14 8z"/></svg>',fo
  check:'<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',x:'<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',warn:'<svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/></svg>',
  stop:'<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>',eye:'<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
  cut:'<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/></svg>',
+ trash:'<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>',
  box:'<svg viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>',copy:'<svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>'};
 const ic=n=>{const s=document.createElement("span");s.style.display="contents";s.innerHTML=ICON[n];return s};
-async function get(p){const r=await fetch(p);return r.json()}
+const TOKHDR={"X-Killcam-Token":TOKEN};
+async function get(p){const r=await fetch(p,{headers:TOKHDR});return r.json()}
 async function post(p,b={}){const r=await fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...b,token:TOKEN})});return r.json()}
 function toast(t,ms=2600,bad=false){const d=el("div",{class:bad?"bad":""},t);$("#toast").append(d);setTimeout(()=>d.remove(),ms)}
 const dur=s=>{if(s==null)return"?";s=Math.round(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?`${h}:${String(m).padStart(2,"0")}:${String(x).padStart(2,"0")}`:`${m}:${String(x).padStart(2,"0")}`};
@@ -692,23 +700,42 @@ function otherVersions(p){const o=p.other_versions||[];const on=p.online;
   :el("span",{class:"dim2"},"no other version of "+p.pkg+" found"),el("div",{class:"dim2",style:"font-size:12px"},on?`Searched online ${ago(on.checked)}: ${on.found?"found":"not found"}`:"Not searched online yet"))}
 
 // ---------------- recordings ----------------
-const RSTAT={new:["Not read yet","pill blue"],changed:["Changed since","pill blue"],waiting:["Waiting for its demo","pill todo"],checked:["Read","pill"]};
+const RSTAT={new:["Not read yet","pill blue"],changed:["Changed since","pill blue"],waiting:["Waiting for its demo","pill todo"],read:["Moments found","pill todo"],checked:["Clips made","pill ok"]};
+const RMSEL=new Map();
 async function loadRecs(){RECS=await get("/api/recordings");stamp_("recs");drawRecs()}
 function drawRecs(){if(!RECS)return;const tb=$("#rbody");tb.innerHTML="";if(RECS.error){tb.append(el("tr",{},el("td",{colspan:5,class:"empty"},RECS.error)));return}
  const q=$("#rq").value.toLowerCase();const rows=RECS.recordings.filter(x=>!q||x.name.toLowerCase().includes(q));
  const neu=RECS.recordings.filter(x=>x.status=="new"||x.status=="changed"||x.status=="waiting").length;$("#b-recs").hidden=!neu;$("#b-recs").textContent=neu;
+ const open=RECS.recordings.reduce((n,x)=>n+(x.moments||[]).filter(m=>!m.done).length,0);
  $("#wt-recs").textContent=`- ${plural(RECS.recordings.length,"recording")}`;
  $("#obs-meta").textContent=neu?`${plural(neu,"recording")} not read yet.`:"Every recording has been read.";
+ $("#obsfind-meta").textContent=open?`${plural(open,"moment")} found and not cut yet.`:"No moments waiting to be cut.";
  $("#rcount").textContent=plural(rows.length,"recording")+(RECS.more?` (newest 400 shown)`:"");
  if(!rows.length)tb.append(el("tr",{},el("td",{colspan:5,class:"empty"},"No recordings in this folder. Pick the folder OBS or Streamlabs saves to.")));
- for(const x of rows){const[d,t]=fdate(x.when);const st=RSTAT[x.status]||[x.status,"pill"];
-  tb.append(el("tr",{},el("td",{class:"when"},d,el("small",{},t)),el("td",{},x.name,x.folder?el("small",{class:"dim2",style:"display:block"},x.folder):null),el("td",{class:"mono"},size(x.size)),
-   el("td",{},el("span",{class:x.clips?"pill ok":st[1]},x.clips?plural(x.clips,"clip"):st[0]),x.fresh?el("div",{},el("span",{class:"pill"},"still being written?")):null),
-   el("td",{style:"white-space:nowrap"},el("button",{class:"small",onclick:()=>runJob("obs",{files:[x.path]}),"data-help":"Cut this recording's clips (again) with the current options."},ic("cut"),"Make clips"),
-    el("button",{class:"small ghost",onclick:()=>runJob("obs_rescan",{files:[x.path]}),"data-help":"Read this recording again from scratch, then cut its clips again."},"Read again"),
-    el("button",{class:"small ghost",onclick:()=>post("/api/open",{what:"file",path:x.path}),"data-help":"Show in Explorer."},ic("folder")))))}}
-$("#rq").oninput=drawRecs;$("#go-obs").onclick=()=>runJob("obs");$("#go-obsdebug").onclick=()=>runJob("obs_debug");
-$("#go-obsrescan").onclick=()=>runJob("obs_rescan",{},{title:`Read all ${RECS?plural(RECS.recordings.length,"recording"):"recordings"} again?`,lines:["Every recording is read again from scratch (about a quarter of its length each) and its clips are cut again.","Clips you have are replaced by the new cut; a clip the new reading no longer finds is kept and named in the console."],ok:"Read all again"});
+ for(const x of rows){const[d,t]=fdate(x.when);const st=RSTAT[x.status]||[x.status,"pill"];const ms=x.moments||[];
+  const moms=el("div",{class:"moments"},...ms.map(m=>{const k=x.path+"|"+m.t,on=RMSEL.has(k);
+   return el("span",{class:"mom"+(m.done?" done":"")+(on?" picked":""),"data-help":`${m.labels.join(" + ")} at ${dur(m.t)} in the recording (${dur(m.a)} to ${dur(m.b)}). `+(m.done?"Cut already; pick it to cut it again.":"Click to pick it for cutting."),
+    onclick:()=>{on?RMSEL.delete(k):RMSEL.set(k,{path:x.path,t:m.t,done:m.done});drawRecs()}},
+    el("span",{class:"pk"},on?"\u2713":""),el("span",{class:"t"},dur(m.t)),el("b",{},m.labels.join(" + ")),m.done?el("span",{class:"ok"},"\u2713"):null)}));
+  if(!ms.length)moms.append(el("span",{class:"dim2"},x.status=="new"||x.status=="changed"?"find moments to see them":x.status=="waiting"?"read it again":"none"));
+  const unread=x.status=="new"||x.status=="changed"||x.status=="waiting";
+  tb.append(el("tr",{},el("td",{class:"when"},d,el("small",{},t)),
+   el("td",{},x.name,el("small",{class:"dim2",style:"display:block"},(x.folder?x.folder+", ":"")+size(x.size))),
+   el("td",{},moms),
+   el("td",{},el("span",{class:st[1]},st[0]),x.clips?el("div",{class:"dim2",style:"font-size:12px;margin-top:3px"},plural(x.clips,"clip")):null,x.fresh?el("div",{},el("span",{class:"pill"},"still being written?")):null),
+   el("td",{style:"white-space:nowrap"},
+    unread?el("button",{class:"small","data-help":"Read this recording and list its moments. Nothing is cut.",onclick:()=>runJob("obs_find",{files:[x.path]})},ic("eye"),"Find moments")
+     :el("button",{class:"small","data-help":"Cut every moment of this recording with the current options.",onclick:()=>runJob("obs",{files:[x.path]})},ic("cut"),"Cut all"),
+    el("button",{class:"small ghost",onclick:()=>runJob("obs_rescan",{files:[x.path],find_only:true}),"data-help":"Read this recording again from scratch and list its moments again. Nothing is cut."},"Read again"),
+    el("button",{class:"small ghost",onclick:()=>post("/api/open",{what:"file",path:x.path}),"data-help":"Show in Explorer."},ic("folder")))))}
+ drawRsel()}
+function drawRsel(){const ms=[...RMSEL.values()],nr=new Set(ms.map(m=>m.path)).size,done=ms.filter(m=>m.done).length;$("#rsel").classList.toggle("on",ms.length>0);
+ $("#rseln").textContent=`${plural(ms.length,"moment")} picked in ${plural(nr,"recording")}`;$("#rseldone").textContent=done?`(${done} cut before: cut again)`:""}
+$("#rsel-clear").onclick=()=>{RMSEL.clear();drawRecs()};
+$("#rsel-cut").onclick=()=>{const ms=[...RMSEL.values()],by={};for(const m of ms)(by[m.path]=by[m.path]||[]).push(m.t);
+ runJob("obs",{moments:by},{title:`Cut ${plural(ms.length,"picked moment")}?`,lines:[`Only these moments are cut from ${plural(Object.keys(by).length,"recording")}, using the reading that was saved (quick).`],ok:"Cut"}).then(ok=>{if(ok){RMSEL.clear();drawRecs()}})};
+$("#rq").oninput=drawRecs;$("#go-obs").onclick=()=>runJob("obs");$("#go-obsfind").onclick=()=>runJob("obs_find");$("#go-obsdebug").onclick=()=>runJob("obs_debug");
+$("#go-obsrescan").onclick=()=>runJob("obs_rescan",{find_only:true},{title:`Read all ${RECS?plural(RECS.recordings.length,"recording"):"recordings"} again?`,lines:["Every recording is read again from scratch (about a quarter of its length each) and its moments are listed again.","Nothing is cut and your clips stay; pick moments afterwards, or use Cut all."],ok:"Read all again"});
 
 // ---------------- clips ----------------
 async function loadClips(){CLIPS=await get("/api/clips");stamp_("clips");drawClips()}
@@ -717,19 +744,34 @@ function drawClips(){if(!CLIPS)return;const items=CLIPS.items;const g=$("#cgrid"
  const st=$("#cstats");st.innerHTML="";const tot=items.filter(x=>x.status!="rejected").length;
  const tile=(b,t)=>el("div",{class:"stat"},el("b",{},b),el("span",{},t));
  st.append(tile(tot,"clips"),tile(items.filter(x=>x.status=="new").length,"not reviewed yet"),tile(items.filter(x=>x.status=="kept").length,"kept"),tile(items.filter(x=>x.status=="rejected").length,"rejected"));
+ const onDisk=items.reduce((n,x)=>n+(x.size||0),0),rej=items.filter(x=>x.status=="rejected"),rejSize=rej.reduce((n,x)=>n+(x.size||0),0);
+ st.append(tile(size(onDisk),"on disk"));
+ const dr=$("#del-rejected");dr.hidden=!rej.length;dr.textContent=`Delete rejected (${rej.length}, ${size(rejSize)})`;
  $("#wt-clips").textContent=`- ${plural(tot,"clip")}`;
  const cc=$("#ccat");cc.innerHTML="";for(const c of["All",...Object.keys(cats).sort()])cc.append(el("button",{class:ccat==c?"on":"",onclick:()=>{ccat=c;drawClips()}},c,el("span",{class:"n"},c=="All"?tot:cats[c])));
  const sv=$("#cstate").value,src=$("#csrc").value;
  const list=items.filter(x=>(ccat=="All"||x.category==ccat)&&(src=="all"||x.source==src)&&(sv=="all"||(sv=="open"&&x.status!="rejected")||(sv=="warn"&&x.warn&&x.status!="rejected")||x.status==sv)).sort((a,b)=>b.created-a.created);
  if(!list.length){g.append(el("div",{class:"empty",style:"grid-column:1/-1"},items.length?"No clips match these filters.":"No clips yet. Make some in Demos or Recordings."));return}
  for(const x of list){const card=el("div",{class:"clip "+(x.status||"")});
-  const v=x.playable?el("video",{controls:true,preload:"metadata",src:"/media/"+x.id}):el("div",{class:"noplay"},el("button",{onclick:()=>post("/api/clip-open",{id:x.id,play:true})},ic("play"),"Play in your video player"));
+  const v=x.playable?el("video",{controls:true,preload:"metadata",src:"/media/"+x.id+"?t="+TOKEN}):el("div",{class:"noplay"},el("button",{onclick:()=>post("/api/clip-open",{id:x.id,play:true})},ic("play"),"Play in your video player"));
   const b=el("div",{class:"b"},el("div",{class:"cat"},x.category),el("div",{class:"t"},(x.labels||[]).join(" + ")),el("div",{class:"m"},`${x.origin} at ${x.stamp}`),x.check?el("div",{class:x.warn?"w":"q"},x.check):null);
   const set=s=>post("/api/clip-status",{id:x.id,status:s}).then(r=>{if(r.ok){x.status=r.status;drawClips();loadState()}else toast(r.error,4000,true)});
   const a=el("div",{class:"a"},el("button",{class:"small",onclick:()=>set("kept")},ic("check"),x.status=="kept"?"Kept":"Keep"),
    el("button",{class:"small",onclick:()=>set(x.status=="rejected"?"new":"rejected")},ic("x"),x.status=="rejected"?"Restore":"Reject"),
-   el("button",{class:"small ghost","data-help":"Show in Explorer.",onclick:()=>post("/api/clip-open",{id:x.id,play:false})},ic("folder")));
+   el("button",{class:"small ghost","data-help":"Show in Explorer.",onclick:()=>post("/api/clip-open",{id:x.id,play:false})},ic("folder")),
+   el("button",{class:"small ghost danger","data-help":"Delete this clip for good, to free disk space. It is not made again.",onclick:()=>deleteClips([x])},ic("trash")));
   card.append(v,b,a);g.append(card)}}
+async function deleteClips(list){if(!list.length)return;const bytes=list.reduce((n,x)=>n+(x.size||0),0);
+ const one=list.length==1;
+ const ok=await confirmDlg({title:one?"Delete this clip?":`Delete ${plural(list.length,"clip")}?`,
+  lines:[one?`${(list[0].labels||[]).join(" + ")} (${list[0].name}) is deleted for good and frees ${size(bytes)}.`:`They are deleted for good and free ${size(bytes)}.`,
+   "This cannot be undone. Killcam '99 remembers them, so they are not made again; picking the moment again makes a new clip."],ok:"Delete",danger:true});
+ if(!ok)return;
+ const r=await post("/api/clip-delete",list.length&&list.every(x=>x.status=="rejected")&&list.length==CLIPS.items.filter(x=>x.status=="rejected").length?{rejected:true}:{ids:list.map(x=>x.id)});
+ if(!r.ok){toast(r.error||"Could not delete",5000,true);return}
+ toast(`${plural(r.deleted,"clip")} deleted, ${size(r.freed)} freed`+(r.problems&&r.problems.length?`. Not deleted: ${r.problems.join(", ")}`:""),5000,!!(r.problems&&r.problems.length));
+ await loadClips();loadState();DEMOS=RECS=null}
+$("#del-rejected").onclick=()=>deleteClips(CLIPS.items.filter(x=>x.status=="rejected"));
 $("#cstate").onchange=drawClips;$("#csrc").onchange=drawClips;
 
 // ---------------- packages ----------------
@@ -812,7 +854,7 @@ $$("[data-pick]").forEach(b=>b.onclick=async()=>{toast("A folder window opened (
 $$("[data-open]").forEach(b=>b.onclick=()=>post("/api/open",{what:b.dataset.open}));
 $$("[data-job]").forEach(b=>b.onclick=()=>runJob(b.dataset.job));
 $("#clean").onclick=async()=>{const r=await post("/api/clean");if(r.ok){toast(`Freed ${size(r.freed)}`);loadState()}else toast(r.error,4000,true)};
-$("#diag").onclick=async()=>{const t=await (await fetch("/api/diagnostics")).text();copyText(t,"Diagnostics")};
+$("#diag").onclick=async()=>{const t=await (await fetch("/api/diagnostics",{headers:TOKHDR})).text();copyText(t,"Diagnostics")};
 async function restartApp(){if(JOB&&JOB.state=="running"){toast("Wait until the job is done.");return}
  const r=await post("/api/restart");if(!r.ok){toast(r.error,4000,true);return}CLOSED=true;
  document.body.innerHTML='<div class="empty" style="padding:80px">Restarting Killcam \'99 ...</div>';

@@ -4,8 +4,8 @@ ut_stream.py - clips from stream recordings (OBS / Streamlabs) by READING THE SC
 
 A stream recording shows the same HUD messages the game sends to a demo:
 
-    You killed nanstuko                      <- kill line   (cyan)
-    DiAteR^ returns the red flag!            <- info line   (cyan: flag events, killing sprees)
+    You killed pixelfox                      <- kill line   (cyan)
+    BlueSky^ returns the red flag!            <- info line   (cyan: flag events, killing sprees)
     Multi Kill!                              <- multi kill  (red)
 
 This module reads those three lines from the video and turns them into the very same message
@@ -419,7 +419,7 @@ def alike(a: str, b: str) -> float:
 
 def name_key(name: str) -> str:
     """A name reduced to what the text reader can tell apart: letters and digits only, and the
-    look-alikes it mixes up made equal ('iMpure' is also read as 'ilVlpure', 'l' as 'I' or '1',
+    look-alikes it mixes up made equal ('Marble' is also read as 'lVlarble', 'l' as 'I' or '1',
     'o' as '0', 'rn' as 'm')."""
     k = re.sub(r"[^a-z0-9]", "", name.lower())
     k = k.replace("1", "i").replace("l", "i").replace("0", "o").replace("5", "s")
@@ -440,6 +440,8 @@ def read_multi(text: str) -> str | None:
     t = letters(text)
     if len(t) < 6:
         return None
+    if "killed" in t or t.startswith(("you", "ou", "yo")):
+        return None  # a piece of the kill line ('ou kill'), not a multi kill text
     best = max(MULTI_WORDS, key=lambda w: alike(t, w))
     if alike(t, best) < 0.74:
         return None
@@ -569,6 +571,23 @@ def read_recording(ffmpeg: str, src: Path, area, fps: float, work: Path, dur: fl
 
 
 SHOWN = 3.05   # a HUD message stays 3 seconds
+FRESH = 0.8    # a new message is read at least this bright, relative to the shown one at its brightest
+MULTI_MIN = 30.0   # a multi kill text is bright red; readings with less red are misreads (measured: real ones 65+)
+
+
+def names_alike(a: str, b: str) -> bool:
+    """Could these two readings be the same name, misread? (Same start, one inside the other, or
+    mostly the same letters.) Used only for readings that follow each other without a break."""
+    ka, kb = name_key(a), name_key(b)
+    if not ka or not kb:
+        return True
+    common = 0
+    for x, y in zip(ka, kb):
+        if x != y:
+            break
+        common += 1
+    return (common >= 3 or alike(ka, kb) >= 0.6
+            or (min(len(ka), len(kb)) >= 4 and (ka in kb or kb in ka)))
 
 
 def track(seen: list[dict], fps: float, you: str = "") -> list[dict]:
@@ -595,6 +614,17 @@ def track(seen: list[dict], fps: float, you: str = "") -> list[dict]:
         # (the reader flickering between two readings of one message)
         hit = next((m for m in reversed(line) if m["kind"] == s["kind"] and m["detail"] == s["detail"]
                     and m["name"] == s["name"] and (m is line[-1] or s["t"] - m["last"] <= 1.0)), None)
+        if hit is None and line and s["line"] in ("kill", "multi"):
+            # A message fades while it is shown, and a fading text is often misread ('Raven42' as
+            # 'Rava', 'Double Kill!' as '1>3.tbie Kill!'). A new message arrives fresh and bright.
+            # So a different reading straight after the shown one (no break) that is clearly
+            # fainter than that message was at its brightest is the same message, misread; on the
+            # kill line only when the names look alike (a new kill of someone else is new).
+            cur = line[-1]
+            if (s["kind"] == cur["kind"] and s["t"] - cur["last"] <= 1.0
+                    and s["strength"] < FRESH * cur["peak"]
+                    and (s["line"] == "multi" or names_alike(s["name"], cur["name"]))):
+                hit = cur
         if hit is None and line and s["line"] == "kill":
             # Still the same text without a break, longer than a message lasts: the same player
             # was killed again and the line started over. It stays one display here (how many
@@ -608,6 +638,7 @@ def track(seen: list[dict], fps: float, you: str = "") -> list[dict]:
         if hit is not None:
             hit["last"], hit["n"] = s["t"], hit["n"] + 1
             hit["texts"][s["text"]] += 1
+            hit["peak"] = max(hit["peak"], s["strength"])
             # A message never comes back once a newer one has replaced it. So whatever was read
             # on this line in between was this same message, misread: drop those. (For multi
             # kills the level only goes up, so there a lower level in between is dropped too.)
@@ -617,7 +648,7 @@ def track(seen: list[dict], fps: float, you: str = "") -> list[dict]:
             continue
         m = {"t": max(0.0, s["t"] - step / 2), "t_seen": s["t"], "last": s["t"], "line": s["line"],
              "kind": s["kind"], "detail": s["detail"], "name": s["name"], "strength": round(s["strength"], 1),
-             "n": 1, "texts": Counter({s["text"]: 1})}
+             "n": 1, "texts": Counter({s["text"]: 1}), "peak": s["strength"]}
         line.append(m)
         line_last[s["line"]] = m
         out.append(m)
@@ -626,7 +657,7 @@ def track(seen: list[dict], fps: float, you: str = "") -> list[dict]:
         m["text"] = m["texts"].most_common(1)[0][0]
         m["shown"] = round(m["last"] - m["t_seen"] + step, 2)
         m["until"] = round(m["last"], 3)
-        for k in ("texts", "last", "t_seen"):
+        for k in ("texts", "last", "t_seen", "peak"):
             m.pop(k)
         m["t"] = round(m["t"], 3)
     # a multi kill text read in a single frame only is kept when a kill of yours is right there
@@ -639,7 +670,7 @@ def track(seen: list[dict], fps: float, you: str = "") -> list[dict]:
 
 def settle_names(events: list[dict], you: str = "") -> dict[str, str]:
     """One spelling per player: the text recognition reads a name slightly differently now and
-    then ('scarz' / 'scar.'); every reading is mapped to the spelling seen most often."""
+    then ('rocky' / 'rock.'); every reading is mapped to the spelling seen most often."""
     for e in events:              # a reading that is only a piece of a name ('Di') is not a name
         if e["name"] and len(name_key(e["name"])) < 3:
             e["name"] = "?"
@@ -662,8 +693,11 @@ def settle_names(events: list[dict], you: str = "") -> dict[str, str]:
         count = Counter(e["name"] for e in events if e["name"] and e["name"] != "?")
     for name, _n in count.most_common():
         k = name_key(name)
+        # (also: one reading inside the other, 'LNightOwl.CLN-' / 'NightOwl': a clan tag or a stray
+        # letter read along, or a part cut off)
         hit = next((c for c in canon if name_key(c) == k or alike(name_key(c), k) >= 0.8
-                    or (len(k) >= 3 and name_key(c).startswith(k))), None)
+                    or (len(k) >= 3 and name_key(c).startswith(k))
+                    or (min(len(k), len(name_key(c))) >= 5 and (k in name_key(c) or name_key(c) in k))), None)
         if hit is None:
             canon.append(name)
             hit = name
@@ -813,10 +847,30 @@ def add_streaks(msgs: list[dict], window: float = 3.0, sure: float = 2.6) -> Non
             m["alt_call"] = botpack
     scheme = core.MULTIKILL_TABLES["mmultikillmessage" if any(m["call"] == "megakill" for m in multis)
                                    else "multikillmessage"]
+    # A level that WAS read proves the levels below it, at the kills before it (like sprees): an
+    # Ultra Kill means there was a Double Kill and a Multi Kill on the way, even when those texts
+    # were hidden. Only when the streak's kills add up to exactly that level.
+    for m in list(multis):
+        chain = m.get("chain") or []
+        if len(chain) - 1 != LEVELS.get(m["call"], 0) or len(chain) < 3:
+            continue
+        for lvl in range(1, len(chain) - 1):
+            t = chain[lvl][0]
+            if scheme.get(lvl) and not any(abs(x["t"] - t) <= 1.2 for x in msgs
+                                           if x["class"].endswith("MultiKillMessage")):
+                msgs.append({"t": t, "where": "screen", "class": "Botpack.MultiKillMessage", "switch": lvl,
+                             "recorder": True, "own": True, "who": "", "text": scheme[lvl], "call": scheme[lvl],
+                             "chain": [list(c) for c in chain[:lvl + 1]], "seen": 0, "shown": 0.0, "until": t,
+                             "inferred": f"implied by the {core.display(m['call'])} read later"})
+    # The kill line must have shown the earlier kill right up to the later one: then its time is
+    # known. If the line was unreadable in between, the earlier kill may have happened well before
+    # its first readable moment, and the gap only looks short.
+    until = {k["t"]: k.get("until", k["t"]) for k in msgs if is_kill(k)}
     level, chain = 0, []
     for i, (t, victim) in enumerate(kills):
         if (i and t - kills[i - 1][0] < sure and t in solid and kills[i - 1][0] in solid
-                and victim != kills[i - 1][1]):
+                and victim != kills[i - 1][1] and not names_alike(victim, kills[i - 1][1])
+                and until.get(kills[i - 1][0], kills[i - 1][0]) >= t - 0.6):
             level += 1
         else:
             level, chain = 0, []
@@ -938,6 +992,8 @@ def events_of(r: dict, you: str = "") -> list[dict]:
     for x in r["readings"]:
         x = dict(x)
         call = read_multi(x["text"])
+        if call and x.get("strength", 0) < MULTI_MIN:
+            continue  # hardly any red there: a misread of something else, not the red multi kill text
         got = None if call else read_info(x["text"])
         if call:
             x.update(line="multi", kind="multi", name="", detail=call)
@@ -1000,19 +1056,42 @@ def describe(msgs: list[dict]) -> str:
 # 5. clips
 # --------------------------------------------------------------------------------------
 
-def cut_clips(ffmpeg: str, rec: Path, msgs: list[dict], dur: float, args, enc, out_dir: Path) -> list[Path]:
-    ext = "mp4" if rec.suffix.lower() in (".mp4", ".mov", ".m4v", ".flv") else "mkv"
-    if args.obs_reencode:
-        ext = args.format
+def clip_ext(rec: Path, args) -> str:
+    """Stream copy keeps the recording's container; exact cuts use the chosen clip format."""
+    if getattr(args, "obs_reencode", False):
+        return getattr(args, "format", "mp4")
+    return "mp4" if rec.suffix.lower() in (".mp4", ".mov", ".m4v", ".flv") else "mkv"
+
+
+def recording_messages(r: dict, rec: Path, args, player: str | None = None) -> list[dict]:
+    """The demo-style message list of a saved reading (player: the name found earlier)."""
+    if player is None:
+        player = find_player(events_of(r), rec, args)
+    events = match_only(events_of(r, player), r, args)
+    return to_messages(events, player)
+
+
+def cut_clips(ffmpeg: str, rec: Path, msgs: list[dict], dur: float, args, enc, out_dir: Path,
+              picked: list[float] | None = None) -> list[Path]:
+    """Cut the clips of one recording. picked: only the moments at these call times (picked in the
+    app; picked means 'cut it', also when it was cut before)."""
+    ext = clip_ext(rec, args)
     clips: list[Path] = []
     planned: set[str] = set()
+    try:  # clips you deleted in the app to free space are not cut again (unless picked on purpose)
+        deleted = {Path(x["file"]).name.lower() for x in json.loads(core.index_file(args).read_text(encoding="utf-8"))
+                   if x.get("status") == "deleted"}
+    except (OSError, ValueError):
+        deleted = set()
     for a, b, names, t_call in core.plan_parts(msgs, args):
         if b <= 0 or a >= dur:
+            continue
+        if picked is not None and not any(abs(t_call - p) < 1.0 for p in picked):
             continue
         a, b = max(0.0, a), min(dur, b) if dur else b
         dst = core.clip_dest(out_dir, names, rec.stem, t_call, ext)
         planned.add(dst.name)
-        if dst.exists() and not args.overwrite:
+        if picked is None and ((dst.exists() and not args.overwrite) or dst.name.lower() in deleted):
             continue
         inferred = any(m.get("inferred") and m["class"].endswith("MultiKillMessage") and a <= m["t"] <= b
                        for m in msgs)
@@ -1031,9 +1110,11 @@ def cut_clips(ffmpeg: str, rec: Path, msgs: list[dict], dur: float, args, enc, o
     try:
         old = [x for x in json.loads(core.index_file(args).read_text(encoding="utf-8"))
                if x.get("source") == "obs" and x.get("origin") == rec.name
-               and Path(x["file"]).name not in planned and (args.out / x["file"]).exists()]
+               and Path(x["file"]).name not in planned and (core.clip_dirs(args.out)["base"] / x["file"]).exists()]
     except (OSError, ValueError):
         old = []
+    if picked is not None:
+        old = []  # only some moments were asked for: the others are not 'lost'
     for x in old:
         say(f"    note: an earlier clip is not found any more with the current reading and settings (kept): "
             f"{Path(x['file']).name}")
@@ -1069,6 +1150,15 @@ def stream_mode(args, ut_dir: Path | None) -> int:
     out_dir = core.clip_dirs(args.out)["obs_clips"]
     done_file = args.out / "obs_processed.txt"
     ledger = core.obs_ledger(args)
+    find_only = getattr(args, "obs_find_only", False)
+    picked_map: dict[str, list[float]] | None = None
+    if getattr(args, "moments", None):  # moments picked in the app: {recording file name: [call times]}
+        try:
+            picked_map = {k.lower(): [float(t) for t in v]
+                          for k, v in json.loads(Path(args.moments).read_text(encoding="utf-8")).items()}
+        except (OSError, ValueError) as e:
+            say(f"PROBLEM: could not read the picked moments ({e})")
+            return 1
     enc = core.clip_encoder_args(core.pick_encoder(ffmpeg, args.encoder), args.clip_quality) if args.obs_reencode else []
     say(f"Stream recordings: {len(files)}" + ("" if explicit else f" in {src}"))
     n_done = n_clips = 0
@@ -1076,9 +1166,10 @@ def stream_mode(args, ut_dir: Path | None) -> int:
         st = f.stat()
         key = f"{st.st_size}|{int(st.st_mtime)}|{f}"
         status, _when = ledger.get(key, (None, 0.0))
-        # 'retry' was the old sound-based method waiting for a demo: such recordings are read now
-        if (status and status != "retry" and not args.overwrite and not explicit
-                and not getattr(args, "rescan", False) and scan_file(args, f).exists()):
+        # 'retry' was the old sound-based method waiting for a demo: such recordings are read now.
+        # 'read' = moments found but not cut yet: a normal run cuts them, a find-only run skips them
+        if (status and status not in ("retry", "read" if not find_only else "") and not args.overwrite
+                and not explicit and not getattr(args, "rescan", False) and scan_file(args, f).exists()):
             continue
         if time.time() - st.st_mtime < 120:
             say(f"  skipped (still being written?): {f.name}")
@@ -1094,18 +1185,32 @@ def stream_mode(args, ut_dir: Path | None) -> int:
         if r is None:
             continue
         player = find_player(events_of(r), f, args)
-        events = events_of(r, player)        # again, now knowing which unclear names are yours
-        events = match_only(events, r, args)
-        msgs = to_messages(events, player)
+        if r.get("player") != player:  # remembered, so the app shows the same moments without asking again
+            r["player"] = player
+            tmp = scan_file(args, f).with_suffix(".tmp")
+            tmp.write_text(json.dumps(r), encoding="utf-8")
+            os.replace(tmp, scan_file(args, f))
+        msgs = recording_messages(r, f, args, player)  # again, now knowing which unclear names are yours
         say(f"    on screen: {describe(msgs)}")
         if getattr(args, "stream_compare", False):
             compare_with_demos(f, r, msgs, args)
-        clips = cut_clips(ffmpeg, f, msgs, r["duration"], args, enc, out_dir)
+        if find_only:
+            n = len(core.plan_parts(msgs, args))
+            say(f"  {n} moment(s) worth a clip found (nothing cut yet)")
+            n_done += 1
+            with open(done_file, "a", encoding="utf-8") as fh:
+                fh.write(f"{key}\tread\t{time.time():.0f}\n")
+            continue
+        picked = picked_map.get(f.name.lower()) if picked_map is not None else None
+        if picked_map is not None and picked is None:
+            continue
+        clips = cut_clips(ffmpeg, f, msgs, r["duration"], args, enc, out_dir, picked)
         say(f"  {len(clips)} clip(s) saved" + (f" in {out_dir}" if clips else ""))
         n_clips += len(clips)
         n_done += 1
-        with open(done_file, "a", encoding="utf-8") as fh:
-            fh.write(f"{key}\tdone\t{time.time():.0f}\n")
+        if picked is None:  # a full cut: this recording is done (picked cuts leave its status)
+            with open(done_file, "a", encoding="utf-8") as fh:
+                fh.write(f"{key}\tdone\t{time.time():.0f}\n")
     say(f"Stream recordings finished: {n_done} read, {n_clips} clip(s).")
     if n_clips:
         core.offer_review(args)

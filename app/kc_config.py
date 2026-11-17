@@ -28,7 +28,7 @@ from pathlib import Path
 
 APP_NAME = "Killcam '99"
 APP_ID = "killcam99"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 APP = Path(__file__).resolve().parent
 INSTALLED = APP.name.lower() == "app"

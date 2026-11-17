@@ -1,5 +1,5 @@
 ===============================================================================
-  KILLCAM '99   version 1.1.0
+  KILLCAM '99   version 1.2.0
   Turns your Unreal Tournament demos and recordings into kill clips
 ===============================================================================
 
@@ -187,9 +187,39 @@
 
   1. Open the Recordings page and check the folder at the top (Change to pick
      the folder OBS saves to).
-  2. Press "Make clips from new recordings". Reading takes about a quarter of
-     each recording's length.
+  2. Either press "Make clips from new recordings": every new recording is
+     read (about a quarter of its length) and all its moments are cut.
+     Or press "Find moments in new recordings": the recordings are read but
+     nothing is cut. Each recording then lists its moments, for example
+     "13:29 Multi Kill + Flag Return"; a tick means it is cut already.
+     Click the moments you want (they turn blue) and press "Cut these
+     moments". That takes only seconds: the saved reading is used.
   3. The clips go to Clips\Recordings.
+
+  Per recording: "Find moments" reads one new recording, "Cut all" cuts all
+  its moments that are not cut yet, "Read again" reads it from scratch and
+  lists its moments again (nothing is cut). A recording OBS is still writing
+  is skipped until it is finished.
+
+  How the reading works
+    Killcam '99 looks at the three message lines in the middle of the HUD
+    ("You killed ...", flag and spree messages, and the red multi kill text)
+    a few times per second. Frames without text are skipped; the others are
+    read with the text recognition built into Windows, on your PC and
+    offline. Each message is followed from frame to frame, misreadings are
+    filtered out, and the match clock tells warm-up apart from the match, so
+    warm-up kills never make a clip. The result is saved, so changing your
+    clip options or picking moments never needs a second reading.
+
+    A message fades while it is on screen and is sometimes misread; Killcam
+    '99 treats a fading, misread name as the same kill, so one kill never
+    turns into a made-up Multi Kill. When something is hidden, it only fills
+    in what the game's rules prove (an Ultra Kill means there was a Double
+    Kill before it). It would rather miss a moment than invent one.
+
+    Windows needs a text recognition language for this: English is best
+    (Settings > Time & language > Language). If your stream layout shows the
+    game smaller or moved, see README.md (--stream-area).
 
   Your player name: leave it empty and Killcam '99 works it out. If you play
   under several names, type the one used in these recordings.
@@ -207,10 +237,15 @@
   Reject    moves the clip to Clips\Rejected. It is not made again.
   Restore   moves a rejected clip back.
 
+  Delete    (the red bin) deletes the clip file for good to free disk
+            space, after asking. "Delete rejected" in the toolbar deletes
+            every rejected clip at once. Deleted clips are remembered and
+            not made again; picking that moment again makes a new clip.
+
   Use the filters to show only new clips, kept ones, one kind of moment, or
-  only clips from demos or from recordings. You can also simply delete a clip
-  file in Explorer; Killcam '99 notices. A deleted clip (not a rejected one)
-  is made again the next time you make clips from that demo.
+  only clips from demos or from recordings. The counters show how much space
+  your clips take. Deleting a clip file in Explorer works too, but such a
+  clip is not remembered and is made again the next time.
 
   Clip file names tell you everything: date and time of the match, the map,
   the time in the match and what happened, for example
