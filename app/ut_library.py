@@ -810,7 +810,8 @@ def fetch(args) -> int:
     bases = list(dict.fromkeys(args.redirect + core.redirect_sources(sysdir, []) + EXTRA_REDIRECTS))
     bases = [b if b.endswith("/") else b + "/" for b in bases]
     say(f"Looking for {len(todo)} missing package version(s) on {len(bases)} redirect servers, "
-        "in the Wayback Machine and in GitHub releases. Only exact versions (same GUID) are kept.")
+        "in the Wayback Machine, in GitHub releases, on medor.no-ip.org and on Unreal Archive. "
+        "Only exact versions (same GUID) are kept.")
     tried_digests: dict[str, str] = {}  # Wayback digest -> GUID inside
     found = 0
     # one Wayback question per redirect folder for every missing file at once (it answers slowly)
@@ -874,17 +875,18 @@ def fetch(args) -> int:
                         break
                 if hit:
                     break
-        # 3. GitHub releases of mods that publish their packages there
-        if not hit and req["pkg"].lower() in core.GITHUB_REPOS:
-            repo = core.GITHUB_REPOS[req["pkg"].lower()]
+        # 3. the mod author's GitHub releases, medor's archives and Unreal Archive (the same finder
+        #    the automatic search uses; the redirect servers were asked above already)
+        if not hit:
             demo_time = None
             for dn in req["demos"]:
                 demo_time = core.demo_start(dn) or demo_time
-            got = core.github_package(req, repo, demo_time, work, say)
+            got = core.find_online(req, [], demo_time, work, sysdir, say)
             if got:
-                add_package(got[0], got[1], f"github.com/{repo}")
-                say(f"  FOUND {req['pkg']} ({req['guid'][:8]}..) in the GitHub releases of {repo}")
+                add_package(got[0], got[1], got[2])
+                say(f"  FOUND {req['pkg']} ({req['guid'][:8]}..) on {got[2]}")
                 got[0].unlink(missing_ok=True)
+                note_online(req["guid"], True, got[2])
                 found += 1
                 hit = True
         if not hit:

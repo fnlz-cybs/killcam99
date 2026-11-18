@@ -55,8 +55,8 @@ goto end
 echo.
 echo   Killcam '99
 echo   -----------------------------------------------------------------------
-echo   1  Find kills in new demos       (fast, nothing is recorded)
-echo   2  Make clips from new demos     (find kills first, then record the moments)
+echo   1  Find kills in demos not looked at yet   (fast, nothing is recorded)
+echo   2  Make clips from demos not done yet      (find kills first, then record)
 echo   3  Make clips from recordings    (OBS / Streamlabs, no game needed)
 echo   4  Refresh packages
 echo   5  Search online for missing packages

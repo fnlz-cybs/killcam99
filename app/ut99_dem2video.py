@@ -252,7 +252,24 @@ def safe_file_name(name: str, fallback: str = "download") -> str:
     return base or fallback
 
 
+_DEMO_PKGS: dict = {}
+
+
 def demo_packages(path: Path, nbytes: int = 2_000_000) -> list[dict] | None:
+    """The packages a demo needs (its USES lines), remembered per file version: several steps ask
+    for the same demo (package check, NPLoader loader check, ...). Each caller gets its own copies."""
+    try:
+        st = Path(path).stat()
+        key = (str(path), st.st_size, st.st_mtime_ns, nbytes)
+    except OSError:
+        return None
+    if key not in _DEMO_PKGS:
+        _DEMO_PKGS[key] = _read_demo_packages(path, nbytes)
+    got = _DEMO_PKGS[key]
+    return None if got is None else [dict(r) for r in got]
+
+
+def _read_demo_packages(path: Path, nbytes: int = 2_000_000) -> list[dict] | None:
     """Scan each demo packet ([int32 frame][8 bytes][int32 len][payload]) at all 8 bit offsets,
     plus the raw stream for strings that span packet boundaries."""
     import struct
@@ -490,7 +507,14 @@ def download_package(req: dict, sources: list[str], work: Path, sysdir: Path, lo
 
 
 # Mods whose old versions live in GitHub releases (package name -> owner/repo).
-GITHUB_REPOS = {"instagibplus": "Deaod/InstaGibPlus", "newctf": "Deaod/NewCTF"}
+# mods whose authors publish every version as a GitHub release: package name prefix -> owner/repo
+GITHUB_REPOS = {"instagibplus": "Deaod/InstaGibPlus", "newctf": "Deaod/NewCTF", "votesys": "Deaod/VoteSys"}
+
+
+def github_repo_for(pkg: str) -> str | None:
+    """The GitHub repo for a package, by name prefix (InstaGibPlus_master-c0576711, VoteSys_v11b, ...)."""
+    low = pkg.lower()
+    return next((r for k, r in sorted(GITHUB_REPOS.items(), key=lambda kv: -len(kv[0])) if low.startswith(k)), None)
 
 
 def github_package(req: dict, repo: str, around: float | None, work: Path, log) -> tuple[Path, str] | None:
@@ -634,10 +658,119 @@ def medor_archives(req: dict, work: Path, log, limit: int = 30) -> tuple[Path, s
     return None
 
 
+UA = "https://unrealarchive.org"
+
+
+def unreal_archive_package(req: dict, work: Path, log, limit: int = 6) -> tuple[Path, str] | None:
+    """Search Unreal Archive (unrealarchive.org, the largest public UT99 collection) for archives
+    that hold a package of this name: its content index (maps, map packs, mutators, ...) and its
+    package index (sounds, textures, music, code). Pages whose file list has the package are
+    downloaded from a mirror and checked for the exact version (GUID) inside."""
+    import html as htmllib
+    import json as jsonlib
+    import urllib.parse
+    import urllib.request
+    name = req["pkg"]
+    hdr = {"User-Agent": "Mozilla/5.0 (Killcam 99 package finder)"}
+
+    def get(url: str, timeout: int = 60) -> bytes | None:
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=timeout) as r:
+                return r.read()
+        except Exception:
+            return None
+
+    # the search splits on '-': "CTF-KlondikeLE17" matches every CTF map, "KlondikeLE17" the right one
+    bare = re.sub(r"^[A-Za-z0-9]{2,5}-", "", name)
+    word = (re.match(r"[A-Za-z]{4,}", bare) or [bare])[0]
+    queries = list(dict.fromkeys([bare, name, word]))
+    pages: list[str] = []
+    for index, q in [(i, q) for q in queries for i in ("ua", "uap")]:
+        if len(pages) >= 12:
+            break
+        raw = get(f"{UA}/search/api/{index}/search?q={urllib.parse.quote(q)}&offset=0&limit=60")
+        try:
+            docs = jsonlib.loads(raw or b"{}").get("docs", [])
+        except ValueError:
+            docs = []
+        for d in docs:
+            f = d.get("fields", {})
+            if f.get("game") != "Unreal Tournament":
+                continue
+            label = (f.get("fileName") or f.get("name") or "").replace("\\", "")
+            if name.lower() in label.lower() and f.get("url") and f["url"] not in pages:
+                pages.append(f["url"])
+    if not pages:
+        return None
+    want = {name.lower() + e for e in PKG_EXTS}
+    arch_dir = work / "archives"
+    arch_dir.mkdir(parents=True, exist_ok=True)
+    tried = 0
+    for page in pages:
+        if tried >= limit:
+            break
+        s = (get(page) or b"").decode("utf-8", "replace")
+        if not re.search(r">\s*" + re.escape(name) + r"\.[a-z]{1,3}\s*<", s, re.I):
+            continue  # its file list has no package of that name
+        links = [htmllib.unescape(u) for u in re.findall(r'href="(https?://[^"]+\.(?:zip|7z|rar|umod))"', s, re.I)]
+        links = [u for u in links if "medor.no-ip.org/index.php" not in u]  # search page, not a file
+        if not links:
+            continue
+        tried += 1
+        local = arch_dir / safe_file_name(urllib.parse.unquote(links[0].rsplit("/", 1)[-1]), "archive.zip")
+        if not local.exists():
+            for u in links:
+                data = get(u, 300)
+                if data:
+                    local.write_bytes(data)
+                    break
+        if not local.exists():
+            continue
+        try:
+            for fname, data in files_in_archive(local, want, arch_dir):
+                tmp = work / (fname + ".archive")
+                tmp.write_bytes(data)
+                if pkg_guid(tmp) == req["guid"]:
+                    log(f"    found {fname} (exact version) on Unreal Archive ({page.rsplit('/', 1)[-1]})")
+                    return tmp, fname
+                tmp.unlink(missing_ok=True)
+        except Exception as e:
+            log(f"    skipped {local.name}: {e}")
+    return None
+
+
+def find_online(req: dict, sources: list[str], around: float | None, work: Path, sysdir: Path, log
+                ) -> tuple[Path, str, str] | None:
+    """Every online source for one exact package version, cheapest first:
+    redirect servers (.uz), the mod author's GitHub releases, medor's archives, Unreal Archive.
+    Returns (file, file name, where) or None. (The Wayback Machine is only asked by the deep
+    search on the Packages page: it is slow.)"""
+    hit = download_package(req, sources, work, sysdir, log) if sources else None
+    if hit:
+        return hit[0], hit[1], "a redirect server"
+    repo = github_repo_for(req["pkg"])
+    if repo:
+        log(f"  searching GitHub releases of {repo} for {req['pkg']} ...")
+        hit = github_package(req, repo, around, work, log)
+        if hit:
+            return hit[0], hit[1], f"github.com/{repo}"
+    log(f"  searching archives on medor.no-ip.org for {req['pkg']} ...")
+    hit = medor_archives(req, work, log)
+    if hit:
+        return hit[0], hit[1], "medor.no-ip.org"
+    log(f"  searching Unreal Archive for {req['pkg']} ...")
+    hit = unreal_archive_package(req, work, log)
+    if hit:
+        return hit[0], hit[1], "unrealarchive.org"
+    return None
+
+
 def redirect_sources(sysdir: Path, extra: list[str]) -> list[str]:
     srcs = list(extra) + ["http://pgaming.site.nfoservers.com/redirect/",  # PassionateGaming (servers in the demos)
                           "https://deaod.de/ut99/",                          # Deaod (iCTF league maps, IG+, NewCTF)
-                          "https://medor.no-ip.org/uz/", "http://uz.ut-files.com/"]
+                          "https://medor.no-ip.org/uz/", "http://uz.ut-files.com/",
+                          "http://files.emilstefanov.net/UT99/Redirect/", "http://uz.unrealadmin.org/",
+                          "http://redirect.ut-files.com/"]
     ud = sysdir / "udemo.ini"
     if ud.exists():
         for m in re.finditer(r"(?im)^RedirectServers\[\d+\]=(.+)$", ud.read_text(encoding="latin-1", errors="replace")):
@@ -691,14 +824,7 @@ def check_demos(demos: list[Path], target: Install, others: list[Install], args,
                             break
                 if not ok and sources and not args.dry_run and g not in not_found:
                     say(f"  looking online for {r['pkg']} ...")
-                    hit = download_package(r, sources, args.out / "_work" / "downloads", sysdir, say)
-                    repo = GITHUB_REPOS.get(r["pkg"].lower())
-                    if not hit and repo:
-                        say(f"  searching GitHub releases of {repo} for {r['pkg']} ...")
-                        hit = github_package(r, repo, demo_start(d), args.out / "_work" / "downloads", say)
-                    if not hit:
-                        say(f"  searching archives on medor.no-ip.org for {r['pkg']} ...")
-                        hit = medor_archives(r, args.out / "_work" / "downloads", say)
+                    hit = find_online(r, sources, demo_start(d), args.out / "_work" / "downloads", sysdir, say)
                     if hit:
                         target.add_to_cache(hit[0], g, r["pkg"] + Path(hit[1]).suffix)
                         if SANDBOX:  # keep a copy in packs\downloads, so it is never downloaded again
@@ -731,7 +857,144 @@ def prepare_packages(demos: list[Path], args, ut_dir: Path) -> dict[Path, list[d
     others = [] if args.no_import else find_other_installs(ut_dir, args.import_from)
     if others:
         say(f"  other UT folders searched for exact matches: {', '.join(i.root.name for i in others)}")
-    return check_demos(demos, Install(ut_dir), others, args, sysdir)
+    missing = check_demos(demos, Install(ut_dir), others, args, sysdir)
+    fix_native_loaders(demos, ut_dir, sysdir)
+    return missing
+
+
+# ---- NPLoader's native loader must match the game's CPU type ----
+# NPLoader (a server mod that delivers anti-cheat such as ACE) puts its native loader
+# NPLoaderLL_<version>.dll in System once, for the game it ran in, and never looks again
+# (NPLoader.ini: bAttemptedLLInstall=True). A loader left from a 32-bit UT makes a 64-bit UT crash
+# ("General protection fault", NPLLibraryLoader.Main) as soon as a demo replays NPLoader's start.
+# Every such demo carries the loader for each CPU type (NPLoaderLLD_x86_<v>, NPLoaderLLD_amd64_<v>),
+# so the one that matches the game is put in place before the game starts.
+NPL_LOADER_RE = re.compile(r"^NPLoaderLLD_(x86|amd64|arm64)_(v\w+)$", re.I)
+
+
+def pe_arch(data: bytes) -> str | None:
+    """'x86', 'amd64' or 'arm64' for a Windows program or DLL (from its PE header), else None."""
+    import struct
+    try:
+        if data[:2] != b"MZ":
+            return None
+        pe = struct.unpack_from("<I", data, 0x3C)[0]
+        if data[pe:pe + 4] != b"PE\0\0":
+            return None
+        return {0x14C: "x86", 0x8664: "amd64", 0xAA64: "arm64"}.get(struct.unpack_from("<H", data, pe + 4)[0])
+    except struct.error:
+        return None
+
+
+def file_arch(p: Path) -> str | None:
+    try:
+        with open(p, "rb") as f:
+            return pe_arch(f.read(8192))
+    except OSError:
+        return None
+
+
+def embedded_dll(pkg: Path) -> bytes | None:
+    """The Windows DLL an NPLoader package carries: one byte array (a compact-index length, then the
+    file itself). Byte-identical to what NPLoader writes to System."""
+    try:
+        b = pkg.read_bytes()
+    except OSError:
+        return None
+    i = 0
+    while True:
+        i = b.find(b"MZ", i)
+        if i < 0:
+            return None
+        if b"This program cannot be run" in b[i:i + 200]:
+            break
+        i += 2
+    for s in range(max(0, i - 5), i):
+        try:
+            n, j = compact_index(b, s)
+        except IndexError:
+            continue
+        if j == i and 0 < n <= len(b) - i:
+            return b[i:i + n]
+    return None
+
+
+# ---- a demo that needs another version of a package the game loads by name (Announcer.uax) ----
+# Stock sound/texture/music packages such as Announcer.uax are loaded when the game starts, from the
+# game's own folders. A demo recorded with another version (a modded announcer) then fails: "File
+# Announcer.uax with GUID ... was already loaded but is incompatible ... version mismatch", and the demo
+# never starts. Having the right version in the Cache is not enough. So for that run only, the demo's
+# exact version is put in a private folder that comes first in the run's ini Paths: the game starts
+# with it. Only sounds, textures and music: a different code package (Core.u, ...) is never swapped.
+OVERRIDE_EXTS = (".uax", ".utx", ".umx")
+
+
+def version_overrides(text: str, demo: Path, sysdir: Path, tag: str, emit=None) -> str:
+    """The run's ini text, with a first Paths entry to ut2vid_pkgs_<tag> holding the demo's own
+    versions of packages the game has in another version. Unchanged when nothing differs."""
+    emit = emit or say
+    odir = sysdir / f"ut2vid_pkgs_{tag}"
+    shutil.rmtree(odir, ignore_errors=True)
+    inst, exts = None, []
+    for r in demo_packages(demo) or []:
+        inst = inst or Install(sysdir.parent)
+        own = [p for p in inst.files.get(r["pkg"].lower(), []) if p.suffix.lower() in OVERRIDE_EXTS]
+        if not own or any(pkg_guid(p) == r["guid"] for p in own):
+            continue  # not loaded by name from the game's folders, or the game has this version
+        hit = inst.find(r)
+        if not hit:
+            continue  # missing: the package check reports it
+        ext = Path(hit[1]).suffix.lower() if Path(hit[1]).suffix.lower() in OVERRIDE_EXTS else own[0].suffix.lower()
+        odir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(hit[0], odir / (r["pkg"] + ext))
+        if ext not in exts:
+            exts.append(ext)
+        emit(f"  {r['pkg']}{ext}: this demo was recorded with another version than the game's "
+             f"({r['guid'][:8]}..); the game starts with the demo's version")
+    if not exts:
+        return text
+    lines = text.split("\r\n") if "\r\n" in text else text.split("\n")
+    nl = "\r\n" if "\r\n" in text else "\n"
+    first = next((i for i, ln in enumerate(lines) if ln.strip().lower().startswith("paths=")), None)
+    if first is None:
+        return text
+    add = [f"Paths=../{sysdir.name}/{odir.name}/*{e}" for e in exts]
+    return nl.join(lines[:first] + add + lines[first:])
+
+
+def fix_native_loaders(demos: list[Path], ut_dir: Path, sysdir: Path) -> None:
+    arch = file_arch(sysdir / "UnrealTournament.exe")
+    if not arch:
+        return
+    inst, seen = None, set()
+    for d in demos:
+        for req in demo_packages(d) or []:
+            m = NPL_LOADER_RE.match(req.get("pkg", ""))
+            if not m or m.group(1).lower() != arch or m.group(2).lower() in seen:
+                continue
+            ver = m.group(2)
+            seen.add(ver.lower())
+            dll = sysdir / f"NPLoaderLL_{ver}.dll"
+            have = file_arch(dll) if dll.exists() else None
+            if have == arch:
+                continue
+            inst = inst or Install(ut_dir)
+            hit = inst.find(req)
+            data = embedded_dll(hit[0]) if hit else None
+            if not data or pe_arch(data) != arch:
+                say(f"  note: NPLoader {ver}: no {arch} loader found in {req['pkg']}; demos that start "
+                    f"NPLoader may crash this {arch} game")
+                continue
+            if kc_config:  # direct mode: the player's own folder, so Remove can undo it
+                if dll.exists():
+                    kc_config.record_replaced(dll)
+                else:
+                    kc_config.record_file(dll)
+            tmp = dll.with_name(dll.name + ".ut2vid_tmp")
+            tmp.write_bytes(data)
+            os.replace(tmp, dll)
+            say(f"  NPLoader {ver}: put the {arch} native loader in place ({dll.name}"
+                + (f"; the one there was for {have}" if have else "") + ")")
 
 
 def installed_maps(ut_dir: Path) -> set[str]:
@@ -1340,23 +1603,26 @@ class KillDetector:
                 [(t, n.split("~")[0], v) for t, n, v in events])
 
 
+def compact_index(b: bytes, o: int) -> tuple[int, int]:
+    """Unreal package 'compact index' at offset o: (value, offset after it)."""
+    b0 = b[o]; o += 1
+    neg, v = b0 & 0x80, b0 & 0x3F
+    if b0 & 0x40:
+        sh = 6
+        while True:
+            x = b[o]; o += 1
+            v |= (x & 0x7F) << sh
+            sh += 7
+            if not x & 0x80:
+                break
+    return (-v if neg else v), o
+
+
 def read_package_sounds(path: Path) -> dict[str, bytes]:
     """name -> WAV bytes for every Sound object in an Unreal .uax package."""
     import struct
     data = path.read_bytes()
-
-    def compact(b, o):
-        b0 = b[o]; o += 1
-        neg, v = b0 & 0x80, b0 & 0x3F
-        if b0 & 0x40:
-            sh = 6
-            while True:
-                x = b[o]; o += 1
-                v |= (x & 0x7F) << sh
-                sh += 7
-                if not x & 0x80:
-                    break
-        return (-v if neg else v), o
+    compact = compact_index
 
     tag, ver, _lic, _flags, nc, no, ec, eo = struct.unpack_from("<IHHIIIII", data, 0)
     if tag != 0x9E2A83C1:
@@ -1541,6 +1807,23 @@ def find_kills(ffmpeg: str, media: Path, templates: dict, pattern: str, offset: 
     if heard:
         say("    calls heard: " + ", ".join(f"{fmt_dur(t + offset)} {n}" for t, n, _ in heard))
     return [(t + offset, n, z) for t, n, z in hits]
+
+
+def fast_capture_args(enc_args: list[str]) -> list[str]:
+    """The lightest preset of the same encoder (a bit higher quality to make up for it), so the
+    capture takes as little as possible from the game while choppy moments are recorded again."""
+    out = list(enc_args)
+    swap = {"p5": "p1", "veryfast": "ultrafast", "quality": "speed"}
+    for i, v in enumerate(out):
+        if out[i - 1] in ("-preset", "-quality") and v in swap:
+            out[i] = swap[v]
+    for key in ("-cq", "-crf", "-qp_i", "-qp_p", "-global_quality"):
+        if key in out:
+            i = out.index(key) + 1
+            out[i] = str(max(0, int(out[i]) - 2))
+    if "h264_qsv" in out and "-preset" not in out:
+        out += ["-preset", "veryfast"]
+    return out
 
 
 def clip_encoder_args(enc_args: list[str], quality: str) -> list[str]:
@@ -1812,7 +2095,7 @@ def derive_multikills(messages: list[dict], speed: float | None = None) -> None:
     UT2004-style 2k4Combos one or SmartCTF's enhanced one) is taken from the multi kill message
     type seen in the demo. Each derived multi kill also carries its streak ('chain': the kill
     times and victims so far) and, where the scheme differs from Botpack, the Botpack name
-    ('alt_call'), so a clip is never lost because a mod names the same streak lower."""
+    ('alt_call', for information: what makes a clip goes by the name the game showed)."""
     events = own_kills_detail(messages)
     if not any(k for _, k, _v in events):
         verify_multikills(messages)  # no kill feed: keep the messages, minus impossible ones
@@ -1980,6 +2263,9 @@ def scan_one(demo: Path, args, ut_exe: Path, sysdir: Path, win, slot: int = 0, e
     copy = sysdir / tmp_demo
     shutil.copyfile(demo, copy)
     (sysdir / exec_file).write_text(f"DEMOPLAY {tmp_demo}\r\n", encoding="ascii")
+    if getattr(args, "scan_ini_text", None):  # this demo's own versions of sounds/textures the game loads first
+        (sysdir / args.scan_ini.format(slot=slot)).write_text(
+            version_overrides(args.scan_ini_text, demo, sysdir, f"s{slot}", emit), encoding="latin-1")
     log = sysdir / log_file
     try:
         log.unlink()
@@ -2109,7 +2395,8 @@ def hook_ini(text: str, mode: int, progress: float, speed: float = 1.0) -> str:
                 k, v = line.split("=", 1)
                 text = set_ini_value(text, HOOK_CONSOLE, k.strip(), v.strip())
     for k, v in (("UVMode", str(mode)), ("UVPlayback", "0"), ("UVSpeed", f"{speed:g}"),
-                 ("UVQuitWhenDone", "True" if mode == 1 else "False"), ("UVProgressEvery", f"{progress:g}")):
+                 ("UVQuitWhenDone", "True" if mode == 1 else "False"), ("UVProgressEvery", f"{progress:g}"),
+                 ("UVNoWindows", "True")):
         text = set_ini_value(text, HOOK_CONSOLE, k, v)
     return text
 
@@ -2156,7 +2443,7 @@ def stop_leftover_ut(ut_dir: Path) -> None:
         pass
 
 
-def boost_process(pid: int, above_normal: bool = True) -> None:
+def boost_process(pid: int, above_normal: bool = True, high: bool = False) -> None:
     """Keep Windows from slowing UT down while it runs in the background: switch off 'efficiency
     mode' (EcoQoS power throttling) and raise the priority a little. A throttled UT draws fewer
     frames, which makes recordings choppy. Your PC stays usable (above normal, not high)."""
@@ -2174,7 +2461,9 @@ def boost_process(pid: int, above_normal: bool = True) -> None:
         h = k32.OpenProcess(0x0200 | 0x0400, False, pid)  # PROCESS_SET_INFORMATION | QUERY_INFORMATION
         if not h:
             return
-        if above_normal:  # parallel scans stay at normal priority, so the PC stays responsive
+        if high:  # re-recording choppy moments: everything for the game and the capture
+            k32.SetPriorityClass(h, 0x00000080)  # HIGH_PRIORITY_CLASS
+        elif above_normal:  # parallel scans stay at normal priority, so the PC stays responsive
             k32.SetPriorityClass(h, 0x00008000)  # ABOVE_NORMAL_PRIORITY_CLASS
         st = PPTS(1, 0x1, 0x0)  # PROCESS_POWER_THROTTLING_EXECUTION_SPEED: off
         k32.SetProcessInformation(h, 4, ctypes.byref(st), ctypes.sizeof(st))  # ProcessPowerThrottling
@@ -2187,12 +2476,12 @@ def hook_built(sysdir: Path) -> bool:
     return (sysdir / f"{HOOK_CONSOLE.split('.')[0]}.u").exists()
 
 
-def hook_calls(seen: list[tuple[float, str]], video_epoch: float, pattern: str, player: str,
-               return_window: float = 15.0, speed: float | None = None, capture_window: float = 20.0):
+def hook_calls(seen: list[tuple[float, str]], video_epoch: float, args, player: str, speed: float | None = None):
     """Announcer calls from the hook's log lines, placed on the video timeline.
     seen = [(wall clock when the line showed up in the log, line)]. Lines can show up late
     (UT writes its log in blocks) but never early, so per stretch of demo the smallest
     'wall clock minus demo time' is the true link between the two clocks.
+    args: the clip options (clip_on, combo_on, return/capture windows, no_carrier_kills).
     Returns (wanted_hits, all_own_calls, all_messages, ok)."""
     anchors, msgs, hooked = [], [], False
     for wall, line in seen:
@@ -2220,14 +2509,13 @@ def hook_calls(seen: list[tuple[float, str]], video_epoch: float, pattern: str, 
             if not any(abs(vt - t2) < 2.0 and c2 == m["call"] for t2, c2, _ in calls):
                 calls.append((vt, m["call"], -1.0))
     calls.sort()
-    import types
-    ev = wanted_events(msgs, types.SimpleNamespace(clip_on=pattern, return_window=return_window,
-                                                   capture_window=capture_window))
+    ev = wanted_events(msgs, args)
     wanted = [(vtime(t), "+".join(order_names(n)), -1.0) for t, n, _ in ev]
     return wanted, calls, allmsgs, True
 
 
 MULTI_PLUS = {"multikill", "megakill", "ultrakill", "monsterkill", "ludicrouskill", "holyshit"}
+COMBO_ON_DEFAULT = "^(multikill|megakill|ultrakill|monsterkill|ludicrouskill|holyshit)$"
 COMBOS = ("flagreturn", "capture", "fckill")
 
 
@@ -2251,14 +2539,18 @@ def carrier_kill_times(messages: list[dict]) -> set[float]:
 
 def wanted_events(messages: list[dict], args) -> list[tuple[float, list[str], float]]:
     """Everything worth a clip: [(demo time, names, demo time the action lasts until)].
-    1. your own announcer calls matching --clip-on (Mega Kill and up, Rampage and up, ...);
-       a multi kill also counts when its Botpack name matches (a mod may name it lower);
-    2. a Multi Kill or higher of yours followed within --return-window seconds by YOU returning
-       your team's flag ("<you> returns the red flag!", Botpack CTFMessage switch 1);
-    3. the same followed within --capture-window seconds by YOU capturing (switch 0);
-    4. a Multi Kill or higher whose streak includes killing the enemy flag carrier."""
+    1. your own announcer calls matching --clip-on (Mega Kill and up, Rampage and up, ...), by the
+       name the game showed (a mod's "Mega Kill" is a Mega Kill, whatever plain UT calls 4 kills);
+    2. a multi kill of yours matching --return-combo-on followed within --return-window seconds
+       by YOU returning your team's flag ("<you> returns the red flag!", Botpack CTFMessage switch 1);
+    3. one matching --capture-combo-on followed within --capture-window seconds by YOU capturing
+       (switch 0);
+    4. one matching --carrier-combo-on whose streak includes killing the enemy flag carrier.
+    Each of the three falls back to --combo-on (default Multi Kill or higher)."""
     def hit(m, pattern):
-        return any(c and re.search(pattern, c, re.I) for c in (m.get("call"), m.get("alt_call")))
+        # only the call as shown and labelled; plain UT's name for the same kill count (alt_call)
+        # would let a mod's Mega Kill through "Ultra Kill and up", or its Ultra Kill through "Monster"
+        return bool(m.get("call")) and re.search(pattern, m["call"], re.I) is not None
     ev = [(m["t"], [m["call"]], m["t"]) for m in messages
           if m["t"] >= 0 and m["own"] and m["call"] and hit(m, args.clip_on)]
     rw, cw = getattr(args, "return_window", 15.0), getattr(args, "capture_window", 20.0)
@@ -2266,16 +2558,19 @@ def wanted_events(messages: list[dict], args) -> list[tuple[float, list[str], fl
     returns = [m["t"] for m in ctf if int(m["switch"]) == 1]
     captures = [m["t"] for m in ctf if int(m["switch"]) == 0]
     fck = set() if getattr(args, "no_carrier_kills", False) else carrier_kill_times(messages)
+    combo_on = getattr(args, "combo_on", None) or COMBO_ON_DEFAULT
+    pat = {kind: getattr(args, f"{kind}_combo_on", None) or combo_on for kind in ("return", "capture", "carrier")}
     for m in messages:
-        if not (m["t"] >= 0 and m["own"] and m["call"] and hit(m, "^(" + "|".join(MULTI_PLUS) + ")$")):
+        if not (m["t"] >= 0 and m["own"] and m["call"]):
             continue
-        for tag, times, window in (("flagreturn", returns, rw), ("capture", captures, cw)):
-            if window > 0:
+        ok = {kind: hit(m, p) for kind, p in pat.items()}
+        for tag, times, window, kind in (("flagreturn", returns, rw, "return"), ("capture", captures, cw, "capture")):
+            if window > 0 and ok[kind]:
                 r = next((x for x in times if 0 <= x - m["t"] <= window), None)
                 if r is not None:
                     ev.append((m["t"], [m["call"], tag], r))
         chain = m.get("chain") or []
-        if fck and any(round(k, 3) in {round(x, 3) for x in fck} for k, _v in chain):
+        if ok["carrier"] and fck and any(round(k, 3) in {round(x, 3) for x in fck} for k, _v in chain):
             ev.append((m["t"], [m["call"], "fckill"], m["t"]))
     # one streak gives several multi kill messages: keep one combo per return / capture / streak,
     # named after its highest (= latest) multi kill
@@ -2540,6 +2835,7 @@ def scan_first(todo: list[Path], args, ut_dir: Path) -> list[Path] | None:
         if bogus:
             say(f"  {d.name}: ignored {len(bogus)} impossible multi kill message(s), e.g. "
                 f"{fmt_dur(bogus[0]['t'])} {bogus[0]['bogus']}")
+        refresh_clip_options(args)  # options changed while the demos were being scanned count
         calls = [(t, "+".join(n)) for t, n, _ in wanted_events(r["messages"], args)]
         chosen = (getattr(args, "moments_map", None) or {}).get(d.name)
         if calls and chosen is not None and not args.whole_demo:
@@ -2570,6 +2866,47 @@ def scan_first(todo: list[Path], args, ut_dir: Path) -> list[Path] | None:
         else:
             say(f"  {d.name}: no wanted calls of yours, skipped")
     return keep
+
+
+LIVE_OPTIONS = ("clip_on", "combo_on", "return_combo_on", "capture_combo_on", "carrier_combo_on", "return_window",
+                "capture_window", "no_carrier_kills", "part_before", "part_after")
+
+
+def refresh_clip_options(args) -> bool:
+    """A Make clips run follows the clip options as they are NOW: the app writes them to
+    --clip-options whenever they change. Returns True when they changed since the run planned."""
+    f = getattr(args, "clip_options", None)
+    if not f:
+        return False
+    try:
+        mt = Path(f).stat().st_mtime
+    except OSError:
+        return False
+    if mt == getattr(args, "_clip_options_mtime", None):
+        return False
+    first = getattr(args, "_clip_options_mtime", None) is None
+    args._clip_options_mtime = mt
+    try:
+        import json
+        new = build_parser().parse_args(json.loads(Path(f).read_text(encoding="utf-8")))
+    except (OSError, ValueError, SystemExit):
+        return False
+    changed = [k for k in LIVE_OPTIONS if getattr(new, k, None) != getattr(args, k, None)]
+    for k in changed:
+        setattr(args, k, getattr(new, k))
+    if changed and not first:
+        say("  your clip options changed: the demos not recorded yet are planned again")
+    return bool(changed) and not first
+
+
+def replan_demo(d: Path, args) -> list | None:
+    """The parts of one demo with the current clip options (recorded ones left out); None = keep."""
+    r = load_scan(d, args)
+    if not r or not r.get("end"):
+        return None
+    spd = getattr(args, "speeds", {}).get(d.name) or scan_speed(r, args)[0]
+    refresh_calls(r["messages"], demo_player(d.name), spd)
+    return [p for p in plan_parts(r["messages"], args) if not part_done(d, p, args)]
 
 
 def auto_scan_jobs() -> int:
@@ -2636,6 +2973,7 @@ def run_scans(todo: list[Path], args, ut_dir: Path) -> int:
     text = patch_ini((sysdir / "UnrealTournament.ini").read_text(encoding="latin-1"), *args.scan_res, args.renderer)
     text = hook_ini(text, mode=1, progress=60, speed=args.scan_speed)
     user = sysdir / "User.ini"
+    args.scan_ini_text = text  # each demo's start rewrites its slot's ini (see version_overrides)
     for slot in range(jobs):
         (sysdir / f"ut2vid_scan{slot}.ini").write_text(text, encoding="latin-1")
         if user.exists():
@@ -3428,17 +3766,103 @@ def match_runs(runs: list[tuple[float, float, bool]], durations: list[float]) ->
     return out
 
 
-def smooth_fps(ffmpeg: str, clip: Path) -> float | None:
-    """Distinct frames per second in a clip (frames that repeat the previous one are not counted).
-    Low values mean UT itself drew few frames while recording: the clip looks choppy."""
-    dur = media_duration(ffmpeg, clip)
-    if not dur:
-        return None
-    r = subprocess.run([ffmpeg, "-hide_banner", "-i", str(clip), "-an", "-vf", "mpdecimate", "-f", "null", "-"],
+# Smoothness check: does the picture keep moving fluidly? A frame that repeats the one before means UT
+# drew no new picture in time (or the capture missed it). Measured on 30 clips: smooth ones repeat at
+# most ~13% of the frames in any moving second, choppy ones 50-85%. A still view is not stutter: the
+# seconds after your own death (until you play again) are left out, and quiet seconds are not judged.
+SMOOTH_REPEAT = 0.05     # mean brightness change (0-255) below which a frame counts as a repeat
+SMOOTH_MOVING = 1.0      # a second is judged only when its new frames change at least this much (median)
+SMOOTH_MAX_SHARE = 0.30  # a moving second with more repeats than this is choppy (under ~2/3 of the frame rate)
+
+
+def frame_diffs(ffmpeg: str, clip: Path) -> list[tuple[float, float]]:
+    """[(clip time, mean brightness change against the frame before)] for every frame."""
+    r = subprocess.run([ffmpeg, "-hide_banner", "-i", str(clip), "-an", "-vf",
+                        "scale=640:-2,signalstats,metadata=print:key=lavfi.signalstats.YDIF", "-f", "null", "-"],
                        capture_output=True, text=True, errors="replace",
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    m = re.findall(r"frame=\s*(\d+)", r.stderr)
-    return int(m[-1]) / dur if m else None
+    return [(float(t), float(v)) for t, v in re.findall(r"pts_time:([\d.]+)\s*\n.*?YDIF=([\d.]+)", r.stderr)]
+
+
+def frame_check(ffmpeg: str, clip: Path, fps: float, skip: list[tuple[float, float]] = ()) -> dict | None:
+    """Where a clip stutters. skip = [(from, to)] clip seconds not to judge (you are dead there).
+    Returns {ok, worst (share of repeats), at, bad [(from, to, share)]} or None if it cannot be read."""
+    import statistics
+    fr = frame_diffs(ffmpeg, clip)
+    if len(fr) < 30:
+        return None
+    n = len(fr)
+    rep = [v < SMOOTH_REPEAT for _t, v in fr]
+    off = [any(a <= t <= b for a, b in skip) for t, _v in fr]
+    step = max(1, int(round(fps / 4)))
+    worst, at, bad = 0.0, None, []
+    for s0 in range(0, n, step):
+        t0 = fr[s0][0]
+        if fr[-1][0] - t0 < 1.0:
+            break
+        idx = [x for x in range(s0, min(n, s0 + int(fps * 1.5))) if fr[x][0] < t0 + 1.0 and not off[x]]
+        if len(idx) < fps / 2:
+            continue
+        fresh = [fr[x][1] for x in idx if not rep[x]]
+        if len(fresh) < 6 or statistics.median(fresh) < SMOOTH_MOVING:
+            continue
+        share = 1 - len(fresh) / len(idx)
+        if share > worst:
+            worst, at = share, round(t0, 2)
+        if share >= SMOOTH_MAX_SHARE:
+            if bad and t0 <= bad[-1][1]:
+                bad[-1] = (bad[-1][0], round(t0 + 1.0, 2), max(bad[-1][2], share))
+            else:
+                bad.append((round(t0, 2), round(t0 + 1.0, 2), share))
+    return {"ok": not bad, "worst": round(worst, 3), "at": at, "bad": bad}
+
+
+def death_spans(messages: list[dict], t_s: float, t_e: float) -> list[tuple[float, float]]:
+    """Clip seconds (clip starts at demo time t_s) in which you are dead: from 'You were killed by'
+    (Botpack VictimMessage) until your next own message, at most 8 s."""
+    own = sorted(m["t"] for m in messages if m.get("recorder"))
+    out = []
+    for m in messages:
+        if m["class"].lower().endswith("victimmessage") and t_s - 8 <= m["t"] <= t_e:
+            nxt = next((o for o in own if o > m["t"] + 0.5), m["t"] + 8)
+            out.append((m["t"] - t_s - 0.3, min(nxt, m["t"] + 8) - t_s))
+    return out
+
+
+def clip_death_spans(clip: Path) -> list[tuple[float, float]]:
+    """For a clip already made: when you are dead in it, from the clip list and the demo's scan
+    (in Killcam '99's work folder, or a folder above the clip). Empty when that is not known."""
+    import json
+    bases = ([kc_config.out()] if kc_config else []) + list(Path(clip).resolve().parents)
+    for base in bases:
+        f = base / "clip_index.json"
+        if not f.exists():
+            continue
+        try:
+            x = next(x for x in json.loads(f.read_text(encoding="utf-8"))
+                     if Path(x.get("file", "")).name.lower() == Path(clip).name.lower())
+            scan = json.loads((base / "scans" / (Path(x["origin"]).stem + ".json")).read_text(encoding="utf-8"))
+            return death_spans(scan["messages"], *x["part"])
+        except (StopIteration, OSError, ValueError, KeyError, TypeError):
+            return []
+    return []
+
+
+def choppy_text(fc: dict, fps: float) -> str:
+    spots = ", ".join(f"{int(a) // 60}:{int(a) % 60:02d} (about {round((1 - sh) * fps)} fps)"
+                      for a, _b, sh in fc["bad"][:4])
+    return f"CHECK: choppy at {spots}" if spots else ""
+
+
+def same_spots(a: dict, b: dict, t_a: float, t_b: float) -> bool:
+    """Do two recordings of a part stutter at the same demo moments? (t_a / t_b: demo time at clip start)
+    Then the stutter is in the demo itself, not in the recording."""
+    sa = [(x + t_a, y + t_a) for x, y, _ in a["bad"]]
+    sb = [(x + t_b, y + t_b) for x, y, _ in b["bad"]]
+    if not sa or not sb:
+        return False
+    hit = sum(1 for x, y in sb if any(x <= q + 0.5 and p <= y + 0.5 for p, q in sa))
+    return hit * 2 >= len(sb)
 
 
 def check_clip(ffmpeg: str, clip: Path, tpl: dict, expected: list[tuple[float, str]]) -> tuple[int, int, list]:
@@ -3468,6 +3892,41 @@ def check_clip(ffmpeg: str, clip: Path, tpl: dict, expected: list[tuple[float, s
     return heard, len(exp), res
 
 
+def choppy_score(fc: dict | None) -> float:
+    """How badly a clip stutters: seconds of stutter weighted by how many frames repeat."""
+    return sum((b - a) * sh for a, b, sh in fc["bad"]) if fc else 0.0
+
+
+def save_part_clip(args, demo: Path, dst: Path, t_s: float, t_e: float, label: str, names, t_call: float,
+                   verdict: list[str], timing: str, choppy: bool) -> str:
+    """A part's clip is final: note it as done, write its check and add it to the clip list."""
+    with open(parts_ledger(args), "a", encoding="utf-8") as fl:
+        fl.write(f"{demo.name}\t{t_s:.2f}\t{t_e:.2f}\t{label}\t{dst.name}\n")
+    if verdict:
+        say(f"    check: {'; '.join(verdict)}")
+        with open(ledger_dir(args) / "check.txt", "a", encoding="utf-8") as fc:
+            fc.write(f"{dst.name}\t{'; '.join(verdict)}\n")
+    add_to_index(args, dst, source="demo", origin=demo.name, category=clip_category(names),
+                 labels=[display(x) for x in names], t_call=t_call, part=[t_s, t_e],
+                 check="; ".join(verdict), warn=any(v.startswith("CHECK") for v in verdict),
+                 timing=timing, choppy=choppy)
+    return f"{demo.name}\t{fmt_dur(t_call)}\t{label}\tgame message, part {fmt_dur(t_s)}-{fmt_dur(t_e)}"
+
+
+def keep_held_choppy(args, c: dict, why: str) -> None:
+    """A choppy part that could not be recorded again: keep its first recording, flagged."""
+    try:
+        c["dst"].parent.mkdir(parents=True, exist_ok=True)
+        os.replace(c["file"], c["dst"])
+    except OSError as e:
+        say(f"  {c['dst'].name}: could not keep the first recording ({e})")
+        return
+    c["resolved"] = True
+    say(f"  {c['dst'].name}: {why}; the first recording is kept")
+    save_part_clip(args, c["demo"], c["dst"], c["t_s"], c["t_e"], c["label"], c["names"], c["t_call"],
+                   c["verdict"] + [choppy_text(c["fc"], args.fps)], c["timing"], True)
+
+
 def cut_parts(ffmpeg: str, video: Path, audio: Path | None, audio_offset: float, parts, seen,
               video_epoch: float, demo: Path, args, enc_args, tpl: dict | None = None) -> list[Path]:
     """Cut each recorded part out of the recording. Where each part is in the video comes from the
@@ -3478,6 +3937,7 @@ def cut_parts(ffmpeg: str, video: Path, audio: Path | None, audio_offset: float,
     out = []
     player = demo_player(demo.name)
     events = []
+    scan_msgs = None  # the demo's saved scan, to know when you are dead (a still view is not stutter)
     version = max([int(m.group(1)) for _w, l in seen for m in [re.search(r"SCAN START .*version=(\d+)", l)] if m]
                   or [15])
     # 1. what the log says about each part: demo start/end, log-timed video position, live messages
@@ -3535,7 +3995,7 @@ def cut_parts(ffmpeg: str, video: Path, audio: Path | None, audio_offset: float,
         if length < 3:
             say(f"  part {n + 1}: too short to keep ({length:.1f}s)")
             continue
-        got = [x["call"] for x in live if any(c and re.search(args.clip_on, c, re.I) for c in (x["call"], x.get("alt_call")))
+        got = [x["call"] for x in live if re.search(args.clip_on, x["call"], re.I)
                or x["call"] in MULTI_PLUS]
         label = "+".join(dict.fromkeys(names))
         say(f"  part {n + 1}: demo {fmt_dur(t_s)}-{fmt_dur(t_e)} -> {label}"
@@ -3544,8 +4004,6 @@ def cut_parts(ffmpeg: str, video: Path, audio: Path | None, audio_offset: float,
         if cut_span(ffmpeg, video, va, length, dst, enc_args, audio, audio_offset, args.format,
                     cover_marker=version < 16 or n not in pos):
             out.append(dst)
-            with open(parts_ledger(args), "a", encoding="utf-8") as fl:
-                fl.write(f"{demo.name}\t{t_s:.2f}\t{t_e:.2f}\t{label}\t{dst.name}\n")
             # quality check: are the announcer calls where they belong, and is the picture smooth?
             verdict = []
             if tpl:
@@ -3554,20 +4012,42 @@ def cut_parts(ffmpeg: str, video: Path, audio: Path | None, audio_offset: float,
                     verdict.append(f"calls heard at the right moment {heard}/{total}")
                     if heard * 2 < total:
                         verdict.append("CHECK: most calls not heard where expected, the cut may be off")
-            fps = smooth_fps(ffmpeg, dst)
-            if fps is not None:
-                verdict.append(f"{fps:.0f} distinct fps")
-                if fps < 40:
-                    verdict.append("CHECK: choppy (UT drew few frames)")
-            if verdict:
-                say(f"    check: {'; '.join(verdict)}")
-                with open(ledger_dir(args) / "check.txt", "a", encoding="utf-8") as fc:
-                    fc.write(f"{dst.name}\t{'; '.join(verdict)}\n")
-            add_to_index(args, dst, source="demo", origin=demo.name, category=clip_category(names),
-                         labels=[display(x) for x in names], t_call=t_call, part=[t_s, t_e],
-                         check="; ".join(verdict), warn=any(v.startswith("CHECK") for v in verdict),
-                         timing="marker" if n in pos else "log")
-            events.append(f"{demo.name}\t{fmt_dur(t_call)}\t{label}\tgame message, part {fmt_dur(t_s)}-{fmt_dur(t_e)}")
+            if scan_msgs is None:
+                scan_msgs = (load_scan(demo, args) or {}).get("messages") or []
+            fc = frame_check(ffmpeg, dst, args.fps, death_spans(scan_msgs or info[n]["live"], t_s, t_e))
+            timing = "marker" if n in pos else "log"
+            key = (demo.name, round(t_call, 2))
+            prev = getattr(args, "choppy_prev", {}).get(key)
+            choppy = fc is not None and not fc["ok"]
+            if choppy and prev is None and getattr(args, "smooth_retry", True) and not getattr(args, "power", False):
+                # hold it back: recorded again at the end of the queue, with more power
+                hold = args.out / "_work" / "choppy" / dst.name
+                hold.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(dst, hold)
+                args.choppy.append({"demo": demo, "part": parts[n], "file": hold, "dst": dst, "fc": fc, "t_s": t_s,
+                                    "t_e": t_e, "label": label, "names": names, "t_call": t_call,
+                                    "verdict": verdict, "timing": timing})
+                say(f"    check: {choppy_text(fc, args.fps)}; recorded again at the end of the queue")
+                continue
+            if prev is not None:
+                prev["resolved"] = True
+                if choppy and prev["fc"] and choppy_score(prev["fc"]) < choppy_score(fc):
+                    os.replace(prev["file"], dst)  # the first recording was smoother: keep that one
+                    in_demo = same_spots(prev["fc"], fc, prev["t_s"], t_s)
+                    fc, t_s, t_e, verdict, timing = prev["fc"], prev["t_s"], prev["t_e"], prev["verdict"], prev["timing"]
+                else:
+                    in_demo = choppy and same_spots(prev["fc"], fc, prev["t_s"], t_s)
+                    try:
+                        prev["file"].unlink()
+                    except OSError:
+                        pass
+            else:
+                in_demo = False
+            if choppy:
+                verdict.append(choppy_text(fc, args.fps) + (" (the stutter is in the demo itself)" if in_demo else ""))
+            elif fc is not None:
+                verdict.append("smooth" + (" on the second recording" if prev is not None else ""))
+            events.append(save_part_clip(args, demo, dst, t_s, t_e, label, names, t_call, verdict, timing, choppy))
     if events:
         clip_dir.mkdir(parents=True, exist_ok=True)
         with open(ledger_dir(args) / "events.txt", "a", encoding="utf-8") as f:
@@ -3608,7 +4088,9 @@ def choose_hits(ffmpeg: str, media: Path, tpl: dict, args, offset: float, seen, 
     """Clip moments. With the UT2VidHook add-on the game's own HUD messages decide (exact, no
     look-alikes); the sound detection still runs and anything it hears that has no game message
     is listed (and clipped too with --also-audio). Without the add-on: the sound detection."""
-    say("  looking for Mega Kill and higher, Unstoppable, Godlike, Wicked Sick ...")
+    say(f"  looking for {', '.join(dict.fromkeys(display(n) for n in re.findall(r'[a-z]+', args.clip_on))) or 'nothing'}"
+        + (" and combos" if (getattr(args, "return_window", 0) or getattr(args, "capture_window", 0)
+                             or not getattr(args, "no_carrier_kills", False)) else "") + " ...")
     heard = find_kills(ffmpeg, media, tpl, args.clip_on, offset=offset) if media is not None else []
     if not args.hook:
         return heard
@@ -3616,9 +4098,7 @@ def choose_hits(ffmpeg: str, media: Path, tpl: dict, args, offset: float, seen, 
     if spd is None:  # whole-demo recording: the speed the scan measured, else the usual one
         r = load_scan(demo, args)
         spd = scan_speed(r, args)[0] if r else default_game_speed(args)
-    wanted, calls, msgs, ok = hook_calls(seen, video_epoch, args.clip_on, demo_player(demo.name),
-                                         getattr(args, "return_window", 15.0), spd,
-                                         getattr(args, "capture_window", 20.0))
+    wanted, calls, msgs, ok = hook_calls(seen, video_epoch, args, demo_player(demo.name), spd)
     if not ok:
         say("    the add-on wrote no messages; using the sound detection only")
         return heard
@@ -3632,6 +4112,40 @@ def choose_hits(ffmpeg: str, media: Path, tpl: dict, args, offset: float, seen, 
         if not any(abs(t - h[0]) < 3.0 for h in heard):
             say(f"    {fmt_dur(t)} {n}: from the game message (the sound detection missed it)")
     return sorted(wanted + (extra if args.also_audio else []))
+
+
+def rerecord_choppy(args, ut_exe: Path, sysdir: Path, extra_dirs: list[Path], ffmpeg: str, enc_args: list[str],
+                    win: Win, res: tuple[int, int]) -> None:
+    """End of the queue: record the moments that came out choppy once more, with everything for the
+    game: high priority for UT and the capture, the lightest capture preset, the game window in front,
+    and 3 s more settle time after each jump. The smoother recording is kept; a moment that is still
+    choppy keeps the better one, flagged."""
+    held = [c for c in args.choppy if not c.get("resolved")]
+    if not held:
+        return
+    by_demo: dict[Path, list[dict]] = {}
+    for c in held:
+        by_demo.setdefault(c["demo"], []).append(c)
+    say(f"=== Recording {len(held)} choppy moment(s) again, full power ===")
+    say("  The game comes to the front for this; it gets the most of your PC until it is done.")
+    saved = (args.settle, args.background, args.power)
+    args.settle, args.background, args.power = args.settle + 3, False, True
+    args.choppy_prev = {(c["demo"].name, round(c["t_call"], 2)): c for c in held}
+    try:
+        for i, (demo, cs) in enumerate(by_demo.items(), 1):
+            say(f"=== [{i}/{len(by_demo)}] ===")
+            args.parts[demo.name] = [c["part"] for c in cs]
+            try:
+                convert_one(demo, args, ut_exe, sysdir, extra_dirs, ffmpeg, enc_args, win, res)
+            except Exception as e:
+                say(f"  ERROR: {e}")
+            time.sleep(2)
+    finally:
+        args.settle, args.background, args.power = saved
+        args.choppy_prev = {}
+        for c in held:
+            if not c.get("resolved"):
+                keep_held_choppy(args, c, "could not be recorded again")
 
 
 def convert_one(demo: Path, args, ut_exe: Path, sysdir: Path, extra_dirs: list[Path],
@@ -3663,7 +4177,7 @@ def convert_one(demo: Path, args, ut_exe: Path, sysdir: Path, extra_dirs: list[P
             for k, v in (("UVMode", "3"), ("UVProgressEvery", "1"), ("UVWait", "6"), ("UVSettle", f"{args.settle:g}"),
                          ("UVSegments", ",".join(f"{a:.2f}:{b:.2f}" for a, b, _, _ in parts))):
                 text = set_ini_value(text, HOOK_CONSOLE, k, v)
-        args.ini_target.write_text(text, encoding="latin-1")
+        args.ini_target.write_text(version_overrides(text, demo, sysdir, "rec"), encoding="latin-1")
 
     # 1. stage demo + exec file + log locations
     demo_copies = []
@@ -3702,7 +4216,7 @@ def convert_one(demo: Path, args, ut_exe: Path, sysdir: Path, extra_dirs: list[P
         say("  starting Unreal Tournament")
         prev_fg = win.foreground() if args.background else 0
         ut = subprocess.Popen(cmd, cwd=str(sysdir))
-        boost_process(ut.pid)
+        boost_process(ut.pid, high=getattr(args, "power", False))
 
         # 2. wait for the game window and turn it into a borderless window at (0,0)
         t0w = time.time()
@@ -3729,8 +4243,10 @@ def convert_one(demo: Path, args, ut_exe: Path, sysdir: Path, extra_dirs: list[P
 
         # 3. wait for the demo to start playing
         started, t_start_wait, last_probe = False, time.time(), 0.0
+        early: list[tuple[float, str]] = []  # add-on lines while waiting (SCAN START has the marker version)
         while time.time() - t_start_wait < args.start_timeout and ut.poll() is None:
             new = watcher.poll()
+            early += [(time.time(), l) for l in new if "UT2VID " in l]
             if any(re.search(p, l) for l in new for p in FAIL_PATTERNS):
                 for l in watcher.lines[-12:]:
                     say(f"    log| {l}")
@@ -3748,7 +4264,7 @@ def convert_one(demo: Path, args, ut_exe: Path, sysdir: Path, extra_dirs: list[P
         if not started:
             say("  WARNING: could not confirm playback started; recording anyway.")
         time.sleep(args.start_delay)
-        seen = [(time.time(), l) for l in watcher.poll() if "UT2VID " in l]  # rest: before the recording
+        seen = early + [(time.time(), l) for l in watcher.poll() if "UT2VID " in l]  # before the recording
         hwnd = win.game_window(ut.pid) or hwnd
         win.make_borderless_at_origin(hwnd, *res, background=args.background)
         if args.background and prev_fg:
@@ -3765,9 +4281,12 @@ def convert_one(demo: Path, args, ut_exe: Path, sysdir: Path, extra_dirs: list[P
             acap = LoopbackRecorder(wav_tmp, args.audio_device)
             acap.start()
             say(f"  sound from: {acap.device_name}")
-        vcap = VideoCapture(ffmpeg, vid_tmp, rect, args.fps, enc_args,
+        vcap = VideoCapture(ffmpeg, vid_tmp, rect, args.fps,
+                            fast_capture_args(enc_args) if getattr(args, "power", False) else enc_args,
                             hwnd=hwnd if args.window_capture else None)
         vcap.start()
+        if getattr(args, "power", False) and vcap.proc:
+            boost_process(vcap.proc.pid, high=True)
         t_rec = time.time()
 
         # 5. wait for the end
@@ -3845,9 +4364,13 @@ def convert_one(demo: Path, args, ut_exe: Path, sysdir: Path, extra_dirs: list[P
             clips = cut_parts(ffmpeg, vid_tmp, audio, offset, parts, seen, video_epoch, demo, args,
                               clip_encoder_args(enc_args, args.clip_quality),
                               demo_templates(args.templates, sysdir.parent, demo) if args.templates else None)
-            say(f"  {len(clips)} of {len(parts)} part(s) saved" + (f" in {clips[0].parent}" if clips else ""))
+            held = sum(1 for c in args.choppy if c["demo"] == demo and not c.get("resolved"))
+            say(f"  {len(clips) - held} of {len(parts)} part(s) saved" + (f" in {clips[0].parent}" if clips else "")
+                + (f"; {held} choppy one(s) are recorded again at the end of the queue" if held else ""))
             ok = True
-            if len(clips) == len(parts):
+            if held:
+                pass  # the end-of-queue pass marks the demo done once those are settled
+            elif len(clips) == len(parts):
                 f = clips_done_file(args)
                 f.parent.mkdir(parents=True, exist_ok=True)
                 with open(f, "a", encoding="utf-8") as fh:
@@ -4258,6 +4781,7 @@ def watch_demo(demo: Path, args, ut_dir: Path | None) -> int:
         say(f"PROBLEM: demo not found: {demo}")
         return 1
     sysdir = ut_system_dir(ut_dir)
+    fix_native_loaders([demo], ut_dir, sysdir)  # NPLoader's loader must match the game, or it crashes
     shutil.copyfile(demo, sysdir / "ut2vid_tmp_watch.dem")
     (sysdir / "ut2vid_exec_watch.txt").write_text("DEMOPLAY ut2vid_tmp_watch.dem\r\n", encoding="ascii")
     w, h = Win().screen_size()
@@ -4265,11 +4789,12 @@ def watch_demo(demo: Path, args, ut_dir: Path | None) -> int:
     text = patch_ini((sysdir / "UnrealTournament.ini").read_text(encoding="latin-1"), w, h, args.renderer)
     if hook_built(sysdir):
         text = hook_ini(text, mode=2, progress=60)
+        text = set_ini_value(text, HOOK_CONSOLE, "UVNoWindows", "False")  # watching: the console stays usable
         if args.at is not None:
             a, b = max(0.0, args.at - 10), args.at + 12
             for k, v in (("UVMode", "3"), ("UVWait", "0.5"), ("UVSettle", "1"), ("UVSegments", f"{a:.2f}:{b:.2f}")):
                 text = set_ini_value(text, HOOK_CONSOLE, k, v)
-    (sysdir / "ut2vid_watch.ini").write_text(text, encoding="latin-1")
+    (sysdir / "ut2vid_watch.ini").write_text(version_overrides(text, demo, sysdir, "watch"), encoding="latin-1")
     cmd = [str(sandbox_exe(sysdir, "watch") or sysdir / "UnrealTournament.exe"), "Entry",
            "exec=ut2vid_exec_watch.txt", "log=ut2vid_watch.log",
            "ini=ut2vid_watch.ini"]
@@ -4544,12 +5069,24 @@ def build_parser() -> argparse.ArgumentParser:
                     help="seconds recorded before the kill streak that leads to a wanted call (default 8)")
     ap.add_argument("--part-after", type=float, default=10.0,
                     help="seconds recorded after the last kill of that streak (default 10)")
+    ap.add_argument("--combo-on", default=COMBO_ON_DEFAULT,
+                    help="which multi kills count for a combo (flag return / capture / flag carrier kill), "
+                         "regular expression (default: Multi Kill or higher)")
+    ap.add_argument("--return-combo-on", metavar="REGEX",
+                    help="which multi kills count for the flag return combo (default: --combo-on)")
+    ap.add_argument("--capture-combo-on", metavar="REGEX",
+                    help="which multi kills count for the capture combo (default: --combo-on)")
+    ap.add_argument("--carrier-combo-on", metavar="REGEX",
+                    help="which multi kills count for the flag carrier kill combo (default: --combo-on)")
     ap.add_argument("--return-window", type=float, default=15.0,
-                    help="clip a Multi Kill or higher followed by you returning your flag within this many "
-                         "seconds (default 15, 0 = off)")
+                    help="clip a combo multi kill (see --return-combo-on) followed by you returning your flag "
+                         "within this many seconds (default 15, 0 = off)")
     ap.add_argument("--capture-window", type=float, default=20.0,
-                    help="clip a Multi Kill or higher followed by you capturing within this many seconds "
-                         "(default 20, 0 = off)")
+                    help="clip a combo multi kill (see --capture-combo-on) followed by you capturing within this "
+                         "many seconds (default 20, 0 = off)")
+    ap.add_argument("--no-smooth-retry", action="store_true",
+                    help="keep choppy clips as they are (flagged) instead of recording them again at the end")
+    ap.add_argument("--check-smooth", nargs="+", metavar="CLIP", help=argparse.SUPPRESS)  # print the stutter check
     ap.add_argument("--settle", type=float, default=2.0,
                     help="parts: jump this many seconds early so picture and sound settle after the jump (default 2)")
     ap.add_argument("--whole-demo", action="store_true",
@@ -4566,12 +5103,13 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--console-pick", action="store_true", help="pick demos from a numbered list instead of a grid")
     ap.add_argument("--dry-run", action="store_true", help="check setup and list demos, convert nothing")
     ap.add_argument("--ut-args", nargs=argparse.REMAINDER, default=[], help="extra UT command line arguments (must be last)")
+    ap.add_argument("--clip-options", metavar="FILE", help=argparse.SUPPRESS)  # the app: clip options as they are now
     ap.add_argument("--moments", metavar="FILE",
                     help="with --scan-first: record only these moments (JSON: {demo file name: [call times]})")
     ap.add_argument("--obs-file", action="append", default=[], metavar="FILE",
                     help="with --obs: only these recordings (can be given more than once)")
     ap.add_argument("--no-carrier-kills", action="store_true",
-                    help="do not clip a Multi Kill+ streak just because it killed the flag carrier")
+                    help="do not clip a combo multi kill streak just because it killed the flag carrier")
     ap.add_argument("--watch", metavar="DEMO", help="Killcam '99: just watch a demo in the game (1x, with sound)")
     ap.add_argument("--at", type=float, metavar="SECONDS",
                     help="with --watch: play only around this moment of the demo (10 s before to 12 s after)")
@@ -4588,6 +5126,16 @@ def _main() -> int:
         print(f"FOLDER={got or ''}", flush=True)
         return 0
     args.window_capture = False
+    args.smooth_retry = not args.no_smooth_retry
+    args.choppy, args.choppy_prev, args.power = [], {}, False
+    if args.check_smooth:
+        ffm = find_ffmpeg()
+        for f in args.check_smooth:
+            fc = frame_check(ffm, Path(f), args.fps, clip_death_spans(Path(f)))
+            print(f"{'smooth' if fc and fc['ok'] else 'CHOPPY' if fc else 'unreadable'}  "
+                  f"worst {fc['worst'] if fc else '-'} at {fc['at'] if fc else '-'}  "
+                  f"{choppy_text(fc, args.fps) if fc else ''}  {Path(f).name}", flush=True)
+        return 0
     args.templates = {}
     args.hook = False
     args.parts = {}
@@ -4887,6 +5435,17 @@ def _main() -> int:
     try:
         for i, d in enumerate(todo, 1):
             say(f"=== [{i}/{len(todo)}] ===")
+            # options changed during the run (in the app): plan this demo again before recording it;
+            # moments picked by hand stay as picked
+            if refresh_clip_options(args) or getattr(args, "_replan", False):
+                args._replan = True
+                if d.name in args.parts and not getattr(args, "moments_map", None) and not args.whole_demo:
+                    new = replan_demo(d, args)
+                    if new is not None:
+                        if not new:
+                            say(f"Demo: {d.name}\n  nothing worth a clip with your current options: skipped")
+                            continue
+                        args.parts[d.name] = new
             try:
                 if convert_one(d, args, ut_exe, sysdir, extra_dirs, ffmpeg, enc_args, win, res):
                     done += 1
@@ -4896,6 +5455,7 @@ def _main() -> int:
                 failed += 1
                 say(f"  ERROR: {e}")
             time.sleep(2)
+        rerecord_choppy(args, ut_exe, sysdir, extra_dirs, ffmpeg, enc_args, win, res)
     except KeyboardInterrupt:
         say("Aborted by user.")
     say(f"Finished: {done} converted, {failed} failed. Videos are in {args.out}")

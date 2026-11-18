@@ -28,7 +28,7 @@ from pathlib import Path
 
 APP_NAME = "Killcam '99"
 APP_ID = "killcam99"
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 
 APP = Path(__file__).resolve().parent
 INSTALLED = APP.name.lower() == "app"
@@ -225,6 +225,24 @@ def record_file(path: Path) -> None:
         _save_manifest(m)
 
 
+def record_replaced(path: Path) -> None:
+    """Before Killcam '99 replaces a file in the player's own UT folder (direct mode; today only
+    NPLoader's native loader for the wrong CPU type): keep the original, so Remove puts it back
+    byte for byte. The first original is the one kept."""
+    if mode() != "direct" or not path.is_file():
+        return
+    m = manifest()
+    m["game"] = m.get("game") or str(game())
+    reps = m.setdefault("replaced", [])
+    if any(r["file"] == str(path) for r in reps):
+        return
+    bak = DATA / "direct_backup" / f"{len(reps)}_{path.name}"
+    bak.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, bak)
+    reps.append({"file": str(path), "backup": str(bak)})
+    _save_manifest(m)
+
+
 def record_cache(cache_dir: Path, guid: str, filename: str, new_file: bool) -> None:
     """A package added to the player's Cache (the .uxx, when new, and its cache.ini line)."""
     if mode() != "direct" or not same(cache_dir.parent, game()):
@@ -245,6 +263,13 @@ def undo_direct(log=print) -> int:
             p.unlink()
             n += 1
             log(f"removed {p}")
+    for r in m.get("replaced", []):  # files Killcam '99 replaced: the originals go back
+        bak, p = Path(r["backup"]), Path(r["file"])
+        if bak.is_file():
+            shutil.copy2(bak, p)
+            bak.unlink()
+            n += 1
+            log(f"restored {p}")
     g = Path(m["game"]) if m.get("game") else None
     if g and m.get("cache"):
         ci = g / "Cache" / "cache.ini"
@@ -282,6 +307,9 @@ def clean_temp(sysdir: Path | None, log=None) -> int:
                 n += 1
             except OSError:
                 pass  # in use by a running UT: it goes next time
+        elif p.name.lower().startswith(TEMP_PREFIX) and p.is_dir():  # ut2vid_pkgs_*: package versions per run
+            shutil.rmtree(p, ignore_errors=True)
+            n += 0 if p.exists() else 1
     if n and log:
         log(f"cleaned {n} temporary file(s) in {sysdir}")
     return n

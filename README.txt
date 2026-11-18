@@ -1,11 +1,12 @@
 ===============================================================================
-  KILLCAM '99   version 1.2.0
+  KILLCAM '99   version 1.3.0
   Turns your Unreal Tournament demos and recordings into kill clips
 ===============================================================================
 
   Killcam '99 watches your UT demos for the big moments - Multi Kills, Monster
   Kills, Ludicrous, Holy Shit, Godlike sprees, flag returns and captures - and
-  records just those moments as short video clips. It can do the same with
+  records just those moments as short video clips. Every clip is checked for
+  stutter, and choppy moments are recorded again. It can do the same with
   gameplay you recorded with OBS or Streamlabs.
 
   Contents
@@ -36,7 +37,10 @@
   2. Double-click Killcam99.bat.
   3. The first time, a short setup asks where Unreal Tournament is and how
      Killcam '99 may use it (see section 4). It also downloads ffmpeg.
-  4. On the Demos page, press "Make clips from new demos".
+  4. On the Demos page, press "Make clips from all demos not done yet".
+     This does every demo in your demo folder that Killcam '99 has not done
+     yet, old ones too. To do only some, tick them in the list first
+     (section 5).
   5. Your clips appear in the Clips folder next to Killcam99.bat.
 
 
@@ -116,6 +120,9 @@
       + Always uses your current UT, maps and mods.
       - Adds one small add-on file (System\UT2VidHook.u) and, when a demo
         needs them, the exact map and mod packages to your Cache folder.
+        If an old anti-cheat loader in System is for the wrong type of
+        game (32-bit in a 64-bit UT), it is swapped for the right one;
+        the original is kept, and Remove puts it back.
       - Do not play UT while clips are being recorded.
       Your settings files (UnrealTournament.ini, User.ini) are never edited:
       Killcam '99 starts the game with its own copies of them. Temporary
@@ -141,13 +148,29 @@
   The Demos page lists every demo in your demo folder, newest first.
 
   The quick way
-    Press "Make clips from new demos". For every demo it has not seen yet,
-    Killcam '99 first plays the demo very fast (about 40 times real time,
-    nothing is recorded) to find your kills. Then it plays only the moments
-    worth a clip at normal speed and records them.
+    Press "Make clips from all demos not done yet". For every demo it has
+    not done yet, Killcam '99 first plays the demo very fast (about 40 times
+    real time, nothing is recorded) to find your kills. Then it plays only
+    the moments worth a clip at normal speed and records them.
+
+    "Not done yet" has nothing to do with the date of a demo: it means every
+    demo in your demo folder that Killcam '99 has not handled before, however
+    old. The first time, that is the whole folder. If that folder holds years
+    of demos, this can take a long time; use "Only some demos" below instead.
+
+  Only some demos
+    Tick the demos you want in the list (sort by Recorded to find the newest)
+    and press "Make clips" in the bar that appears.
+
+  Removing demos and putting them back
+    "Remove" (per demo, or "Remove from list" for the ticked ones) takes a
+    demo off the list; the .dem file stays where it is and no job touches it.
+    To bring demos back: open the "Removed" filter, tick them (the box at the
+    top of the list ticks all) and press "Put back".
 
   Picking moments yourself
-    1. Press "Find kills in new demos". This is fast and records nothing.
+    1. Press "Find kills in demos not looked at yet". This is fast and
+       records nothing.
     2. Each demo now shows its moments, for example "4:30 Monster Kill".
     3. Click the moments you want; they turn blue.
     4. Press "Record these moments" in the bar that appears.
@@ -172,9 +195,55 @@
     * You can stop at any time with Stop at the bottom. Clips already saved
       stay; the rest is done the next time.
 
+  Choppy moments
+    After cutting each clip, Killcam '99 checks that the picture stays
+    smooth: a stretch where the game showed far fewer new frames than usual
+    (it looks like low fps) counts as choppy. The seconds after you die are
+    left out, because a still picture there is normal.
+    A choppy moment is not saved straight away. It is recorded once more at
+    the end of the queue, with as much of your PC as possible for the game:
+    high priority for UT and the recording, the lightest recording settings,
+    3 seconds more settle time after each jump, and the game window in front
+    (so it takes over your screen for a moment).
+    * Smooth this time: that recording is kept, as a normal clip.
+    * Still choppy: the smoother of the two recordings is kept, marked with
+      a "Choppy" warning (section 7). When both stutter at the same spot,
+      the clip says "the stutter is in the demo itself": the lag happened
+      while the demo was recorded (the player's PC or connection), and no
+      recording can fix that.
+    If you stop before the end of the queue, those moments are simply
+    recorded again next time. To skip the second try, switch off "Record
+    choppy moments again at the end of the queue" (section 8).
+
   Finding kills again
     "Find kills in all demos again" looks at every demo once more. Useful
     after a Killcam '99 update, or when results look wrong. Your clips stay.
+
+  Starting over
+    Options > Folders > "Delete all demo scans" deletes every saved scan
+    result. Every demo goes back to Not looked at, and the next Make clips
+    or Find kills searches all of them again (with many demos that takes a
+    while). Your clips stay, and moments that were already recorded are not
+    recorded again; readings of OBS recordings are not touched. It asks
+    first and cannot be undone, but once the demos are searched again the
+    Demos page shows what changed (see "Comparing results" below).
+
+  Comparing results
+    When you change what makes a clip or the combos (section 8), or find
+    kills again, Killcam '99 remembers the results as they were. The Demos
+    page then shows a blue bar with what changed, for example
+      Results changed since 01:10 (you changed the clip options)
+      64 moments, was 82: +3 new, -21 no longer a clip, 2 changed
+    and marks the moments themselves:
+      NEW                a moment that was not there before
+      struck through     "no longer a clip": it was a moment before, not
+                         now (a clip already made stays in Clips)
+      was: ...           the same moment, now with other labels
+    "Show changed demos" lists only the demos that changed (also the
+    "Changed" filter). "Keep new results" accepts them and the marks go
+    away. "Undo changes" puts your clip options back as they were (only
+    after an options change). More changes before you decide are all
+    compared with the results from before the first one.
 
 
 -------------------------------------------------------------------------------
@@ -219,7 +288,7 @@
 
     Windows needs a text recognition language for this: English is best
     (Settings > Time & language > Language). If your stream layout shows the
-    game smaller or moved, see README.md (--stream-area).
+    game smaller or moved, see "Killcam99.bat --help" (--stream-area).
 
   Your player name: leave it empty and Killcam '99 works it out. If you play
   under several names, type the one used in these recordings.
@@ -242,10 +311,17 @@
             every rejected clip at once. Deleted clips are remembered and
             not made again; picking that moment again makes a new clip.
 
-  Use the filters to show only new clips, kept ones, one kind of moment, or
-  only clips from demos or from recordings. The counters show how much space
-  your clips take. Deleting a clip file in Explorer works too, but such a
-  clip is not remembered and is made again the next time.
+  A clip with a warning shows it in red under its name, for example when the
+  announcer calls are not where they should be. A red "Choppy" label means
+  the clip stutters even after a second recording (section 5, "Choppy
+  moments"); the line below it says where. Watch it and decide: Keep it if
+  the stutter is not in the part that matters, Reject it otherwise.
+
+  Use the filters to show only new clips, kept ones, clips with a warning,
+  one kind of moment, or only clips from demos or from recordings. The
+  counters show how much space your clips take. Deleting a clip file in
+  Explorer works too, but such a clip is not remembered and is made again
+  the next time.
 
   Clip file names tell you everything: date and time of the match, the map,
   the time in the match and what happened, for example
@@ -261,11 +337,31 @@
                   Holy Shit (and Multi Kill, which makes many clips).
     Sprees        Killing Spree, Rampage, Dominating, Unstoppable, Godlike,
                   Wicked Sick.
-    Combos        a Multi Kill or better followed by your flag return or your
-                  capture within a number of seconds, or a Multi Kill in which
-                  you kill the enemy flag carrier: one longer clip.
+    Combos        one longer clip for a multi kill followed by a flag play:
+                  * then you return your flag (within the seconds you set),
+                  * then you capture (within the seconds you set),
+                  * or the multi kill includes killing the enemy flag carrier.
+                  Each of the three picks the multi kill it starts at (Multi
+                  Kill, Mega Kill, Ultra Kill, Monster Kill, Ludicrous Kill
+                  or Holy Shit); that one and every higher one count. For
+                  example "Ultra Kill or higher, then you return your flag"
+                  next to "Monster Kill or higher, then you capture".
+                  Standard: Ultra Kill or higher for all three. Multi Kill or
+                  Mega Kill make many more combo clips. Untick a flag play to
+                  make no combo clips of that kind.
+                  These are separate from the multi kills above: a multi kill
+                  you left unticked there can still make a combo clip here,
+                  and the other way round.
     Only your own announcer calls count, so other players' sprees never make
-    a clip.
+    a clip. A multi kill counts by the name the game showed: some mods name
+    kill counts differently (one calls 4 kills a Mega Kill, plain UT calls
+    that an Ultra Kill), and then the mod's name is the one that counts, the
+    same name the clip gets.
+    Changing these takes effect at once for demos already searched: the
+    moments on the Demos page update without finding the kills again, and
+    the page shows what changed (section 5, "Comparing results"). A Make
+    clips run that is already busy follows the change too: every demo it
+    has not recorded yet is planned again with your new choices.
 
   Options > Length and output
     Before the streak   seconds of build-up before the first kill.
@@ -276,6 +372,10 @@
                         prefer it.
     Quality             High is like the recording; Normal is about half the
                         size; Small for sharing quickly.
+    Record choppy moments again at the end of the queue
+                        on by default (section 5, "Choppy moments"). Turn it
+                        off on a slow PC to save time: choppy clips are then
+                        kept straight away, marked "Choppy".
 
 
 -------------------------------------------------------------------------------
@@ -308,15 +408,23 @@
     All packages    everything Killcam '99 knows about, with a search box.
 
   When something is missing
-    * Press "Search online" (one version) or "Search online for all
-      missing". Killcam '99 looks on UT redirect servers, in old copies saved
-      by the Wayback Machine, and in the releases of known mods. Only the
-      exact version is kept.
+    * Make clips and Find kills already look online by themselves, on UT
+      redirect servers, in the GitHub releases of mods whose authors
+      publish there, in the archives on medor.no-ip.org, and on Unreal
+      Archive (unrealarchive.org, the largest UT collection).
+    * For a deeper search press "Search online" (one version) or "Search
+      online for all missing": the same places plus old copies saved by the
+      Wayback Machine (slower). Only the exact version is kept.
     * Or, if you have the files somewhere (another UT install, a map
       collection, a cache folder from a friend), press "Add a folder that has
       them". Folders you add are only read.
     * "Other versions you have" means you have the map, just not the version
       that server used. Those will not work for this demo.
+    * Sounds, textures and music the game loads at start (Announcer.uax,
+      for example, when you use another announcer, or the demo's server
+      did): Killcam '99 notices when a demo needs another version than the
+      game's own and starts the game with the demo's version for that
+      demo. Your own files are not changed.
     * The Packages button on each demo shows every version that demo needs
       and where each one is.
 
@@ -327,23 +435,28 @@
 
   Every change is saved right away and used by the next job.
 
-  Clips               what makes a clip (section 8).
-  Length and output   clip length, file type and quality (section 8).
+  Clips               what makes a clip, and which multi kill each combo
+                      starts at (section 8).
+  Length and output   clip length, file type, quality, and whether choppy
+                      moments are recorded again (section 8).
   Speed and sound     how many demos are searched at the same time (Auto
                       suits most PCs; more uses more CPU), the search speed,
                       and which sound device is recorded.
-  Folders             the demo, recordings and clips folders, and deleting
-                      temporary recordings to free space.
+  Folders             the demo, recordings and clips folders; deleting
+                      temporary recordings to free space; and deleting all
+                      demo scans to start over (section 5).
   Game                which UT folder is used and how; Open setup to change
                       it; Update to refresh the copy or the add-on; Remove
                       to take Killcam '99 out of your UT folder; Delete to
                       remove the separate copy.
   App                 open in its own window, a desktop notification when a
-                      job is done, Developer tools, and Reset to the
-                      standard options (your folders and game setup stay).
+                      job is done, check for updates when Killcam '99
+                      starts, Developer tools, and Reset to the standard
+                      options (your folders and game setup stay).
 
   Help shows a system check (with buttons to fix what is missing), the keys,
-  the version, and "Copy diagnostics" for bug reports.
+  the version with "Check for updates" (section 12), and "Copy diagnostics"
+  for bug reports.
 
 
 -------------------------------------------------------------------------------
@@ -370,11 +483,22 @@
  12. UPDATING KILLCAM '99
 -------------------------------------------------------------------------------
 
-  1. Close Killcam '99 (Quit at the top right).
-  2. Unzip the new version over this folder and let it replace files.
-  Your settings, clips, package list and game copy are kept: they are not in
-  the zip. If Killcam '99 is open while you update, it shows a banner asking
-  to restart.
+  The easy way
+    When a new version is out, a banner says so ("Killcam '99 1.4.0 is
+    out"). Press "Update now": it is downloaded from GitHub and checked
+    while you keep working. Then press "Restart and update": Killcam '99
+    closes, puts the new version in place and opens again by itself.
+    Help > Updates > "Check for updates" asks at any time. Killcam '99 asks
+    GitHub once when it starts; switch that off in Options > App.
+
+  By hand
+    1. Close Killcam '99 (Quit at the top right).
+    2. Unzip the new version (github.com/fnlz-cybs/killcam99, Releases) over
+       this folder and let it replace files.
+
+  Either way your settings, clips, package list and game copy are kept. If
+  Killcam '99 is open while you update by hand, it shows a banner asking to
+  restart.
 
   After an update, Options > Game > Update puts the newest add-on in place if
   the system check asks for it.
@@ -409,6 +533,17 @@
   "This UT has no udemo"
     Install the OldUnreal 469 patch (https://www.oldunreal.com).
 
+  The game crashes on some demos ("General protection fault")
+    Demos from servers with the NPLoader / ACE anti-cheat crashed a 64-bit
+    UT when NPLoader's old 32-bit loader was still in the game folder.
+    Killcam '99 now puts the matching 64-bit loader (from the demo itself)
+    in place before it plays such a demo, and keeps the old anti-cheat
+    from ending the demo early or putting a window over the picture.
+    After updating Killcam '99, press Options > Game > Update once, so
+    the game gets the newest add-on. Demos you took off the list because
+    of the crash: open the Removed filter on the Demos page and press Put
+    back.
+
   A demo shows "packages missing"
     See section 9. Click the red label for the exact versions.
 
@@ -420,9 +555,32 @@
   Clips have no sound, or the wrong sound
     Choose the device your game plays on in Options > Speed and sound.
 
+  Clips stutter or look low fps
+    Killcam '99 checks every clip and records choppy moments again by itself
+    (section 5, "Choppy moments"). If many clips still come out "Choppy":
+    * close games, browser videos and other heavy programs while recording;
+    * make sure Help > system check shows ffmpeg 8.1 or newer (it records
+      the game window directly, which is lighter than recording the screen);
+    * a higher "Settle time after a jump" (Options > Length and output)
+      helps when the stutter is at the very start of clips.
+    "The stutter is in the demo itself" cannot be fixed: the demo was
+    recorded with that lag.
+
+  Too many clips
+    Untick Multi Kill and Killing Spree under "What makes a clip", and let
+    the combos start at a higher multi kill, for example captures from
+    Monster Kill (Options > Clips).
+
+  Old demos get clips too
+    "Make clips from all demos not done yet" does every demo in the folder
+    that Killcam '99 has not done, whatever its date. Tick only the demos you
+    want and use "Make clips" in the bar, or use "Remove" on the ones you
+    never want (the files stay; Removed brings them back).
+
   Finding kills misses moments or finds wrong ones
     Make sure your player name is right, then use "Find kills in all demos
-    again". Only your own announcer calls count.
+    again" (or start over with Options > Folders > "Delete all demo
+    scans"). Only your own announcer calls count.
 
   A folder window did not appear
     It may have opened behind the Killcam '99 window. Look in the taskbar.
@@ -441,12 +599,16 @@
  15. WHAT GOES ONLINE
 -------------------------------------------------------------------------------
 
-  Killcam '99 only connects to the internet for these, and only when you ask
-  for it:
+  Killcam '99 only connects to the internet for these:
     * the ffmpeg download during setup (from www.gyan.dev, checked against
       its published checksum),
-    * searching for missing packages (UT redirect servers, the Wayback
-      Machine at web.archive.org, and GitHub releases of known mods).
+    * searching for missing packages (UT redirect servers, GitHub releases
+      of known mods, medor.no-ip.org, unrealarchive.org, and on request the
+      Wayback Machine at web.archive.org),
+    * the update check: one question to GitHub (api.github.com) when
+      Killcam '99 starts (Options > App switches it off) or when you press
+      Check for updates, and the download of a new version when you press
+      Update now (checked against GitHub's SHA-256 checksum).
   The window itself runs on your PC only (127.0.0.1) and cannot be reached
   from other computers. Nothing about you or your demos is sent anywhere.
 

@@ -25,6 +25,7 @@ var config float UVProgressEvery;  // demo seconds between progress lines
 var config string UVSegments;      // mode 3: "start:end,start:end,..." in demo seconds
 var config float UVWait;           // mode 3: demo seconds to play before the first jump
 var config float UVSettle;         // mode 3: jump this many demo seconds before a part starts
+var config bool  UVNoWindows;      // keep UT's window layer (menus, console window) off the picture
 
 var bool   UVInDemo, UVSpeedSet, UVFinished;
 var int    UVCount, UVHooks;
@@ -243,6 +244,21 @@ function UVSegmentTick( DemoPlaybackSpec D, float T )
 	}
 }
 
+// "disconnect" while Killcam '99 plays a demo: ignored. Old anti-cheat code in a demo (ACE v1.3,
+// NPLoader v20) cannot load its 32-bit native library in a 64-bit game; it then sends the console
+// command "disconnect" (live, the server would have kicked the player), which would end the demo
+// after ~25 seconds. The tool ends demos itself. Outside a Killcam '99 session it disconnects as usual.
+exec function Disconnect()
+{
+	if ( UVMode != 0 && UVInDemo && !UVFinished )
+	{
+		Log("UT2VID BLOCKED disconnect", 'UT2Vid');
+		return;
+	}
+	if ( Viewport != None && Viewport.Actor != None )
+		Viewport.Actor.ClientTravel("?failed", TRAVEL_Absolute, false);
+}
+
 function UVPoll()
 {
 	local DemoPlaybackSpec D;
@@ -271,6 +287,19 @@ function UVPoll()
 	if ( D.Driver == None )
 		return;
 
+	// Old anti-cheat code in some demos (NPLoader) starts UT's window layer; the console then
+	// draws its console window over the game. Nothing of it belongs in a clip.
+	if ( UVNoWindows )
+	{
+		if ( bShowConsole )
+			HideConsole();
+		if ( IsInState('UWindow') )
+		{
+			CloseUWindow();
+			Log("UT2VID CLOSED window layer t=" $ D.Driver.GetCurrentTime(), 'UT2Vid');
+		}
+	}
+
 	if ( !UVInDemo )
 	{
 		UVInDemo = true;
@@ -279,7 +308,7 @@ function UVPoll()
 		if ( i > 0 )
 			MapName = Left(MapName, i);
 		Log("UT2VID SCAN START total=" $ D.Driver.GetTotalTime() $ " frames=" $ D.Driver.GetTotalFrames()
-			$ " map=" $ MapName $ " version=16", 'UT2Vid');
+			$ " map=" $ MapName $ " version=17", 'UT2Vid');
 	}
 	if ( !UVSpeedSet )
 	{
@@ -325,4 +354,5 @@ defaultproperties
 	UVSettle=2.0
 	UVQuitWhenDone=True
 	UVProgressEvery=60.0
+	UVNoWindows=True
 }

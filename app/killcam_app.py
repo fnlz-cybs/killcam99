@@ -28,6 +28,7 @@ cfg.migrate()
 import ut99_dem2video as core  # noqa: E402
 import ut_library as lib  # noqa: E402
 import ut_stream as stream  # noqa: E402
+import update as upd  # noqa: E402
 
 core.SANDBOX = HERE
 
@@ -77,6 +78,8 @@ TRIGGERS = {  # key: (label, group, regex part, on by default)
     "wickedsick": ("Wicked Sick", "spree", "whickedsick|wickedsick", True),
 }
 
+COMBO_ORDER = ["multikill", "megakill", "ultrakill", "monsterkill", "ludicrouskill", "holyshit"]
+
 DEFAULTS = {
     "demo_folder": "",
     "obs_folder": str(Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Videos"),
@@ -94,6 +97,12 @@ DEFAULTS = {
     "capture_on": True,
     "capture_window": 20,
     "carrier_kills": True,
+    # per combo row (flag return / capture / flag carrier kill): the multi kill it starts at;
+    # that one and every higher multi kill count for it
+    "return_from": "ultrakill",
+    "capture_from": "ultrakill",
+    "carrier_from": "ultrakill",
+    "smooth_retry": True,  # record choppy moments again at the end of the queue
     "obs_track": 0,
     "player": "",
     "obs_reencode": False,
@@ -101,6 +110,7 @@ DEFAULTS = {
     "notify": True,
     "library_sources": [],
     "dev_mode": False,
+    "check_updates": True,  # ask GitHub for a newer release when Killcam '99 starts
 }
 
 
@@ -115,13 +125,32 @@ def settings() -> dict:
     st = dict(DEFAULTS)
     st.update({k: v for k, v in core.load_settings().items() if k in DEFAULTS})
     st["demo_folder"] = st["demo_folder"] or default_demo_folder()
+    for kind in COMBO_KINDS:
+        if st[kind + "_from"] not in COMBO_ORDER:
+            st[kind + "_from"] = DEFAULTS[kind + "_from"]
     return st
+
+
+COMBO_KINDS = ("return", "capture", "carrier")  # flag return, capture, flag carrier kill
+
+
+def combo_set(st: dict, kind: str) -> list[str]:
+    """The multi kills that count for one combo row: its starting one and every higher one."""
+    return COMBO_ORDER[COMBO_ORDER.index(st[kind + "_from"]):]
 
 
 def clip_args(st: dict) -> list[str]:
     """Command line options for what makes a clip, from the settings."""
     parts = [TRIGGERS[k][2] for k in st["triggers"] if k in TRIGGERS]
+    combo = [TRIGGERS[k][2] for k in COMBO_ORDER
+             if any(k in combo_set(st, kind) for kind in COMBO_KINDS)]  # all of them together
+
+    def rx(keys: list[str]) -> str:
+        return "^(" + "|".join(keys) + ")$" if keys else "^$"
+
     a = ["--clip-on", "|".join(parts) if parts else "^$",
+         "--combo-on", rx(combo),
+         *[x for kind in COMBO_KINDS for x in (f"--{kind}-combo-on", rx([TRIGGERS[k][2] for k in combo_set(st, kind)]))],
          "--part-before", f"{float(st['part_before']):g}", "--part-after", f"{float(st['part_after']):g}",
          "--return-window", f"{float(st['return_window']) if st['return_on'] else 0:g}",
          "--capture-window", f"{float(st['capture_window']) if st['capture_on'] else 0:g}",
@@ -129,6 +158,8 @@ def clip_args(st: dict) -> list[str]:
          "--no-review"]
     if not st["carrier_kills"]:
         a.append("--no-carrier-kills")
+    if not st["smooth_retry"]:
+        a.append("--no-smooth-retry")
     if st["audio_device"]:
         a += ["--audio-device", st["audio_device"]]
     return a
@@ -181,6 +212,7 @@ class Job:
                          (r"^Recording: (.+?)  \(", "Listening to {0}"),
                          (r"^Scanning (\d+) demo\(s\) first", "Scanning {0} demo(s) first"),
                          (r"^  muxing|^  corner marker", "Cutting the clips"),
+                         (r"^=== Recording (\d+) choppy moment", "Recording {0} choppy moment(s) again"),
                          (r"^Compiling ", "Building the add-on")):
             m = re.search(pat, body)
             if m:
@@ -258,17 +290,21 @@ def start_job(kind: str, body: dict) -> tuple[bool, str]:
                 mf.write_text(json.dumps({Path(d).name: [float(t) for t in ts] for d, ts in moments.items()}),
                               encoding="utf-8")
                 extra = ["--moments", str(mf)]
+            write_clip_options(st)  # a running job follows changes made meanwhile (see write_clip_options)
+            extra += ["--clip-options", str(clip_options_file())]
             cmds = [py() + [str(CORE), "--clips-only", "--scan-first", *scan_args(st), *clip_args(st), *extra,
                             *(demos or folder)]]
             n_m = sum(len(v) for v in moments.values())
             title = (f"Record {n_m} picked moment(s)" if moments else
-                     f"Kill clips from {len(demos)} demo(s)" if demos else "Kill clips from all new demos")
+                     f"Kill clips from {len(demos)} demo(s)" if demos else "Kill clips from all demos not done yet")
         elif kind == "scan":
             redo = bool(demos) or bool(body.get("all"))
+            if redo:
+                take_snapshot("rescan", st)  # the results as they were, to compare with
             cmds = [py() + [str(CORE), "--scan", *scan_args(st), *clip_args(st)] + (["--overwrite"] if redo else [])
                     + (demos or folder)]
             title = (f"Scan {len(demos)} demo(s)" if demos else "Rescan all demos" if body.get("all")
-                     else "Scan new demos")
+                     else "Find kills in demos not looked at yet")
         elif kind in ("obs", "obs_find", "obs_debug", "obs_rescan"):
             files = [str(Path(f)) for f in body.get("files") or []]
             moments = body.get("moments") or {}  # picked moments: {recording path: [call times]}
@@ -338,6 +374,14 @@ def start_job(kind: str, body: dict) -> tuple[bool, str]:
         elif kind == "install":
             cmds = [py() + [str(HERE / "get_ffmpeg.py")]]
             title = "Download ffmpeg"
+        elif kind == "update":
+            rel = UPDATE.get("info") or {}
+            a = rel.get("asset")
+            if not (cfg.INSTALLED and rel.get("newer") and a):
+                return False, "No newer release to download."
+            cmds = [py() + [str(HERE / "update.py"), "download", "--data", str(cfg.DATA), "--version", rel["version"],
+                            "--url", a["url"], "--size", str(a["size"]), "--digest", a.get("digest") or ""]]
+            title = f"Download Killcam '99 {rel['version']}"
         else:
             return False, f"unknown job {kind}"
         sync_core()
@@ -407,6 +451,9 @@ def list_demos() -> dict:
     if not folder.is_dir():
         return {"folder": str(folder), "error": "This folder does not exist. Pick your demo folder.", "demos": []}
     ns = core_ns(st)
+    base = load_snapshot()
+    summary = {"time": base["time"], "reason": base["reason"], "before": 0, "now": 0, "added": 0, "removed": 0,
+               "changed": 0, "demos": 0} if base else None
     files = sorted(p for p in folder.iterdir() if p.suffix.lower() == ".dem" and not p.name.startswith("ut2vid_tmp"))
     info = demo_info_cache()
     cat = lib.load_catalog()
@@ -423,26 +470,118 @@ def list_demos() -> dict:
         mp = core.map_from_filename(f.name) or (r or {}).get("map") or info.get(f"{f.name}|{size}", {}).get("map")
         if mp is None:
             need_maps.append(f)
-        moments, status = [], "new"
+        moments, status, cmp = [], "new", None
         if r and r.get("end"):
-            core.refresh_calls(r["messages"], core.demo_player(f.name), core.scan_speed(r, ns)[0])
-            parts = core.plan_parts(r["messages"], ns)
-            for a, b, names, t in parts:
-                moments.append({"t": t, "a": a, "b": b, "labels": [core.display(n) for n in names],
-                                "category": core.clip_category(names), "done": core.part_done(f, (a, b, names, t), ns)})
+            moments = demo_moments(f, r, ns)
+            if base and f.name in base["demos"]:
+                removed_m, n_added, n_changed = compare_moments(base["demos"][f.name], moments)
+                if removed_m or n_added or n_changed:
+                    cmp = {"added": n_added, "removed": removed_m, "changed": n_changed}
+                    summary["demos"] += 1
+                    summary["added"] += n_added
+                    summary["removed"] += len(removed_m)
+                    summary["changed"] += n_changed
+                summary["before"] += len(base["demos"][f.name])
+                summary["now"] += len(moments)
             done = sum(m["done"] for m in moments)
             status = ("nothing" if not moments else "done" if done == len(moments) else
                       "partly" if done else "todo")
         elif r:
             status = "incomplete"
         rows.append({"name": f.name, "path": str(f), "size": size, "when": start, "map": mp or "",
-                     "length": total, "status": status, "moments": moments,
+                     "length": total, "status": status, "moments": moments, "compare": cmp,
                      "missing": lib.missing_count(f.name, cat), "pkgs_known": f.name in cat.get("demos", {}),
                      "removed": f.name.lower() in removed})
     if need_maps:
         find_maps_later(need_maps)
     rows.sort(key=lambda x: x["when"] or 0, reverse=True)
-    return {"folder": str(folder), "demos": rows, "maps_pending": bool(need_maps)}
+    return {"folder": str(folder), "demos": rows, "maps_pending": bool(need_maps),
+            "compare": summary if base else None}
+
+
+def demo_moments(f: Path, r: dict, ns) -> list[dict]:
+    """The moments worth a clip in one scanned demo, with the clip options in ns."""
+    core.refresh_calls(r["messages"], core.demo_player(f.name), core.scan_speed(r, ns)[0])
+    return [{"t": t, "a": a, "b": b, "labels": [core.display(n) for n in names],
+             "category": core.clip_category(names), "done": core.part_done(f, (a, b, names, t), ns)}
+            for a, b, names, t in core.plan_parts(r["messages"], ns)]
+
+
+# --------------------------------------------------------------------------------------
+# Comparing results: before a change of the clip options (or finding kills again) the moments of
+# every scanned demo are saved once; the Demos page then shows what is new, gone or changed until
+# the player keeps the new results or undoes the change. Results are compared, not options, so a
+# new scan is compared the same way.
+# --------------------------------------------------------------------------------------
+
+CLIP_KEYS = ("triggers", "return_from", "capture_from", "carrier_from", "return_on", "return_window",
+             "capture_on", "capture_window", "carrier_kills", "part_before", "part_after")
+
+
+def compare_file() -> Path:
+    return cfg.out() / "compare_base.json"
+
+
+def load_snapshot() -> dict | None:
+    try:
+        return json.loads(compare_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+# settings.json and compare_base.json are read, changed and written as a whole: one request at a time
+# (the page can send two changes at once, and the server answers them on two threads)
+SETTINGS_LOCK = threading.RLock()
+
+
+def take_snapshot(reason: str, st: dict) -> None:
+    """Save the current results as 'before' (once: an open comparison keeps its first snapshot)."""
+    with SETTINGS_LOCK:
+        if load_snapshot() is None:  # none yet (an unreadable one is replaced)
+            _write_snapshot(reason, st)
+
+
+def _write_snapshot(reason: str, st: dict) -> None:
+    folder = Path(st["demo_folder"])
+    if not folder.is_dir():
+        return
+    ns = core_ns(st)
+    demos = {}
+    for f in folder.iterdir():
+        if f.suffix.lower() != ".dem" or f.name.startswith("ut2vid_tmp"):
+            continue
+        r = core.load_scan(f, ns)
+        if r and r.get("end"):
+            demos[f.name] = [{k: m[k] for k in ("t", "a", "b", "labels", "done")} for m in demo_moments(f, r, ns)]
+    snap = {"time": time.time(), "reason": reason, "settings": {k: st[k] for k in CLIP_KEYS}, "demos": demos}
+    f = compare_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(snap), encoding="utf-8")
+    os.replace(tmp, f)
+
+
+def compare_moments(old: list[dict], new: list[dict]) -> tuple[list[dict], int, int]:
+    """Mark the new moments against the old ones: m['new'] for a moment that was not there,
+    m['was'] (old labels) for the same moment with other labels. The same moment = first call
+    within 1 s, else at least half of the shorter one overlapping. Returns (old moments that are
+    gone, number new, number changed)."""
+    left = list(old)
+    added = changed = 0
+    for m in new:
+        hit = next((o for o in left if abs(o["t"] - m["t"]) <= 1.0), None)
+        if hit is None:
+            hit = next((o for o in left
+                        if min(o["b"], m["b"]) - max(o["a"], m["a"]) >= 0.5 * min(o["b"] - o["a"], m["b"] - m["a"])), None)
+        if hit is None:
+            m["new"] = True
+            added += 1
+            continue
+        left.remove(hit)
+        if hit["labels"] != m["labels"]:
+            m["was"] = hit["labels"]
+            changed += 1
+    return left, added, changed
 
 
 _REC_CACHE: dict = {}
@@ -564,6 +703,8 @@ def health() -> dict:
     mods = {m: iu.find_spec(m) is not None for m in ("numpy", "pyaudiowpatch")}
     work = cfg.out() / "_work"
     work_bytes = sum(f.stat().st_size for f in work.rglob("*") if f.is_file()) if work.is_dir() else 0
+    scans = [f for f in scan_files() if f.suffix.lower() == ".json"]
+    scan_info = {"count": len(scans), "bytes": sum(f.stat().st_size for f in scans)}
     where = "a separate copy" if cfg.mode() == "copy" else "your own UT folder"
     checks = [
         {"id": "build", "ok": cfg.setup_done(), "label": "Unreal Tournament", "fix": "wizard",
@@ -580,7 +721,7 @@ def health() -> dict:
         {"id": "audio", "ok": mods["pyaudiowpatch"], "label": "pyaudiowpatch (recording the game sound)",
          "fix": None, "detail": "included" if mods["pyaudiowpatch"] else "missing: unzip Killcam '99 again"},
     ]
-    return {"checks": checks, "work_bytes": work_bytes}
+    return {"checks": checks, "work_bytes": work_bytes, "scans": scan_info}
 
 
 def newest_scan() -> float:
@@ -600,12 +741,13 @@ def state() -> dict:
             cats[x.get("category", "?")] = cats.get(x.get("category", "?"), 0) + 1
     return {"settings": settings(), "defaults": DEFAULTS,
             "triggers": [{"key": k, "label": v[0], "group": v[1]} for k, v in TRIGGERS.items()],
+            "combo_kills": [{"key": k, "label": v[0].split(" (")[0]} for k in COMBO_ORDER for v in [TRIGGERS[k]]],
             "health": health(), "clips_total": sum(cats.values()), "clips_by_type": cats,
             "clips_new": sum(1 for x in idx if x.get("status") == "new"),
             "job": JOB.info(len(JOB.lines)) if JOB else None,
             "here": str(HERE), "out": str(cfg.out()), "clips": str(cfg.clips()), "cpu_threads": os.cpu_count() or 0,
             "game": game_state(), "app": {"name": cfg.APP_NAME, "version": cfg.VERSION},
-            "code_changed": code_changed(), "scans_changed": newest_scan(),
+            "code_changed": code_changed(), "scans_changed": newest_scan(), "update": update_state(),
             "auto_jobs": core.auto_scan_jobs()}
 
 
@@ -648,6 +790,30 @@ def open_path(p: Path, select: bool = False) -> None:
         pass
 
 
+def scan_files() -> list[Path]:
+    """The saved demo scans (work\\scans); recordings' readings (stream_scans) are not part of it."""
+    d = cfg.out() / "scans"
+    return [f for f in d.iterdir() if f.is_file() and f.suffix.lower() in (".json", ".tmp")] if d.is_dir() else []
+
+
+def delete_scans() -> tuple[int, int]:
+    """Start over: delete every demo scan, so every demo is 'Not looked at' again. Clips and the record
+    of what was recorded (parts_done.txt, clip_index.json) stay, so nothing is recorded twice. The
+    results as they were are kept for the comparison, so the next search shows what changed.
+    Returns (scans deleted, bytes freed)."""
+    take_snapshot("cleared", settings())
+    n = freed = 0
+    for f in scan_files():
+        try:
+            size = f.stat().st_size
+            f.unlink()
+            n += f.suffix.lower() == ".json"
+            freed += size
+        except OSError:
+            pass
+    return n, freed
+
+
 def clean_work() -> int:
     """Delete the temporary recordings in videos\\_work (only when no job runs)."""
     n = 0
@@ -670,7 +836,7 @@ def clean_work() -> int:
 TOKEN = secrets.token_hex(16)
 STARTED = time.time()
 RESTART = {"wanted": False}
-CODE_FILES = [CORE, HERE / "ut_library.py", HERE / "killcam_app.py", HERE / "killcam_app.html", HERE / "kc_config.py"]
+CODE_FILES = [CORE, HERE / "ut_library.py", HERE / "killcam_app.py", HERE / "killcam_app.html", HERE / "kc_config.py", HERE / "update.py"]
 
 
 def code_changed() -> bool:
@@ -831,23 +997,47 @@ class Handler(BaseHTTPRequestHandler):
                 JOB.stop()
             self._json({"ok": True})
         elif path == "/api/settings":
-            cur = core.load_settings()
-            for k, v in (body.get("values") or {}).items():
-                if k not in DEFAULTS:
-                    continue
-                t = SETTING_TYPES[k]
-                try:
-                    v = (bool(v) if t is bool else int(float(v)) if t is int else float(v) if t is float
-                         else [str(x) for x in v] if k == "library_sources"
-                         else [x for x in v if x in TRIGGERS] if t is list else str(v))
-                except (TypeError, ValueError):
-                    continue
-                cur[k] = v
-            core.save_settings(**cur)
-            sync_core()
+            with SETTINGS_LOCK:
+                cur = core.load_settings()
+                before = settings()
+                for k, v in (body.get("values") or {}).items():
+                    if k not in DEFAULTS:
+                        continue
+                    t = SETTING_TYPES[k]
+                    try:
+                        v = (bool(v) if t is bool else int(float(v)) if t is int else float(v) if t is float
+                             else [str(x) for x in v] if k == "library_sources"
+                             else [x for x in v if x in TRIGGERS] if t is list else str(v))
+                    except (TypeError, ValueError):
+                        continue
+                    if k.endswith("_from") and k[:-5] in COMBO_KINDS and v not in COMBO_ORDER:
+                        continue  # a combo row starts at one of the multi kills
+                    cur[k] = v
+                if any(k in cur and cur[k] != before[k] for k in CLIP_KEYS):
+                    take_snapshot("options", before)  # the results as they were, to compare with
+                core.save_settings(**cur)
+                sync_core()
+                write_clip_options(settings())
             self._json({"ok": True, "settings": settings()})
         elif path == "/api/reset-settings":
-            core.save_settings(**{k: v for k, v in DEFAULTS.items() if k not in ("demo_folder", "obs_folder")})
+            with SETTINGS_LOCK:
+                before = settings()
+                if any(DEFAULTS[k] != before[k] for k in CLIP_KEYS):
+                    take_snapshot("options", before)
+                core.save_settings(**{k: v for k, v in DEFAULTS.items() if k not in ("demo_folder", "obs_folder")})
+                write_clip_options(settings())
+            self._json({"ok": True, "settings": settings()})
+        elif path == "/api/compare":
+            with SETTINGS_LOCK:
+                snap = load_snapshot()
+                if body.get("action") == "undo" and snap and snap.get("reason") == "options":
+                    core.save_settings(**{k: v for k, v in snap["settings"].items() if k in DEFAULTS})
+                    sync_core()
+                    write_clip_options(settings())
+                try:
+                    compare_file().unlink()
+                except OSError:
+                    pass
             self._json({"ok": True, "settings": settings()})
         elif path == "/api/demo-remove":
             names = [Path(str(n)).name for n in body.get("names") or []]
@@ -930,6 +1120,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": "Not while a job runs."})
             else:
                 self._json({"ok": True, "freed": clean_work()})
+        elif path == "/api/delete-scans":
+            with JOB_LOCK:  # no job may start while the scans are deleted
+                if JOB and JOB.state == "running":
+                    self._json({"ok": False, "error": "Not while a job runs. Stop it or wait until it is done."})
+                else:
+                    n, freed = delete_scans()
+                    self._json({"ok": True, "deleted": n, "freed": freed})
         elif path == "/api/restart":
             if JOB and JOB.state == "running":
                 self._json({"ok": False, "error": "A job is running; restart when it is done."})
@@ -937,6 +1134,16 @@ class Handler(BaseHTTPRequestHandler):
             RESTART["wanted"] = True
             self._json({"ok": True})
             threading.Thread(target=lambda: (time.sleep(0.3), SERVER.shutdown()), daemon=True).start()
+        elif path == "/api/update-check":
+            self._json({"ok": True, "update": check_update()})
+        elif path == "/api/update-apply":
+            if JOB and JOB.state == "running":
+                self._json({"ok": False, "error": "A job is running; update when it is done."})
+                return
+            ok, err = apply_update()
+            self._json({"ok": ok, "error": err})
+            if ok:  # the installer waits for this app to close, then starts the new version
+                threading.Thread(target=lambda: (time.sleep(0.5), SERVER.shutdown()), daemon=True).start()
         elif path == "/api/quit":
             if JOB and JOB.state == "running":
                 JOB.stop()
@@ -944,6 +1151,68 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=lambda: (time.sleep(0.3), SERVER.shutdown()), daemon=True).start()
         else:
             self._json({"ok": False, "error": "unknown"}, 404)
+
+
+# --------------------------------------------------------------------------------------
+# Updates: the latest GitHub release of fnlz-cybs/killcam99 (update.py does the work)
+# --------------------------------------------------------------------------------------
+
+UPDATE: dict = {"info": None, "error": None, "checked": 0.0}
+
+
+def clip_options_file() -> Path:
+    return cfg.out() / "_work" / "clip_options.json"
+
+
+def write_clip_options(st: dict) -> None:
+    """The clip options as they are now, for a Make clips job that is already running: it reads them
+    again before recording each demo, so a change made meanwhile counts for the demos still to come."""
+    f = clip_options_file()
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(clip_args(st)), encoding="utf-8")
+    os.replace(tmp, f)
+
+
+def check_update() -> dict:
+    """Ask GitHub once; the answer is kept for the window (state -> update)."""
+    try:
+        UPDATE.update(info=upd.check(cfg.VERSION), error=None, checked=time.time())
+    except Exception as e:  # offline, rate limit, ...: not a problem, just no update news
+        UPDATE.update(error=str(e), checked=time.time())
+    return update_state()
+
+
+def update_state() -> dict:
+    staged = upd.staged_version(cfg.DATA) if cfg.INSTALLED else None
+    ready = bool(staged) and upd.version_tuple(staged) > upd.version_tuple(cfg.VERSION)
+    return {"current": cfg.VERSION, "installed": cfg.INSTALLED, "info": UPDATE["info"], "error": UPDATE["error"],
+            "checked": UPDATE["checked"], "ready": staged if ready else None}
+
+
+def clean_old_update() -> None:
+    """After an update (or with an outdated download) the unpacked files are not needed any more."""
+    st = upd.staging(cfg.DATA)
+    staged = upd.staged_version(cfg.DATA)
+    if st.exists() and not (staged and upd.version_tuple(staged) > upd.version_tuple(cfg.VERSION)):
+        import shutil
+        shutil.rmtree(st, ignore_errors=True)
+
+
+def apply_update() -> tuple[bool, str]:
+    """Hand over to the new release's own Python (no file of it is in use), which waits until this
+    app has closed, copies the new files over the install and starts Killcam '99 again."""
+    st = update_state()
+    if not st["ready"]:
+        return False, "No downloaded update to install."
+    new_root = upd.staging(cfg.DATA) / "new" / "Killcam99"
+    pyexe = new_root / "app" / "python" / "python.exe"
+    if not pyexe.exists():
+        pyexe = Path(sys.executable)
+    subprocess.Popen([str(pyexe), "-I", str(new_root / "app" / "update.py"), "apply", "--from", str(new_root),
+                      "--to", str(cfg.ROOT), "--wait-pid", str(os.getpid()), "--restart"],
+                     cwd=str(new_root), creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+    return True, ""
 
 
 def game_state() -> dict:
@@ -1069,6 +1338,9 @@ def main() -> int:
     print("=" * 72)
     if "--no-window" not in sys.argv and "--restarted" not in sys.argv:
         open_window(url)
+    clean_old_update()
+    if cfg.INSTALLED and settings().get("check_updates"):
+        threading.Thread(target=check_update, daemon=True).start()
     try:
         SERVER.serve_forever()
     except KeyboardInterrupt:

@@ -126,6 +126,15 @@ button.pill{cursor:pointer;box-shadow:none}button.pill.bad:hover{background:#f2d
 .mom .t{color:var(--dim2);font-family:var(--mono);font-size:11px}
 .mom.done b{color:var(--dim2);font-weight:400}.mom.done .ok{color:var(--ok)}
 .mom.picked{border-color:var(--blue);background:#e1ecfa}
+/* comparing results: summary bar on the Demos page and the marks on the moments */
+.compare{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:10px;padding:9px 12px;border:1px solid #b9d0ee;border-left:3px solid var(--blue);border-radius:4px;background:#eef4fc;color:#24456f}
+.compare[hidden]{display:none}.compare .what{flex:1;min-width:280px}.compare .what b{font-weight:600}
+.compare .nums{display:block;margin-top:2px;font-size:12.5px;color:#3d5a80}.compare .plus{color:var(--ok);font-weight:600}.compare .minus{color:var(--bad);font-weight:600}.compare .chg{color:var(--warn);font-weight:600}
+.mom.isnew{border-color:#8cc597;background:#f1f9f2}
+.mom .newtag{font-size:10px;font-weight:700;letter-spacing:.3px;color:#fff;background:var(--ok);border-radius:2px;padding:0 4px}
+.mom .was{font-size:11px;color:var(--warn)}
+.mom.gone{cursor:default;border-style:dashed;background:#f6f7f8}.mom.gone:hover{border-color:#cfd3d9}
+.mom.gone b,.mom.gone .t{text-decoration:line-through;color:var(--dim2);font-weight:400}.mom.gone .gonetag{font-size:11px;color:var(--bad)}
 .mom .pk{width:13px;height:13px;border:1px solid #9aa1ab;border-radius:2px;background:#fff;display:inline-grid;place-items:center;font-size:10px;line-height:1}
 .mom.picked .pk{background:var(--blue);border-color:var(--blue);color:#fff}
 .mom .eye{display:inline-grid;place-items:center;margin-left:2px;padding:1px 3px;border-radius:2px;color:var(--dim2)}.mom .eye:hover{background:#e4e7eb;color:#222}.mom .eye svg{width:14px;height:14px}
@@ -154,6 +163,7 @@ button.pill{cursor:pointer;box-shadow:none}button.pill.bad:hover{background:#f2d
 .card .sub{color:var(--dim);font-size:12.5px;margin:0 0 6px}
 .row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #eef0f2}.row:first-of-type{border-top:0}
 .row label{flex:1}.row .hint{display:block;color:var(--dim2);font-size:12px}
+.combo-row select{margin-right:6px;padding:2px 4px}.combo-row input:disabled,.combo-row select:disabled{opacity:.6}
 .checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px 14px;margin:6px 0 10px}
 .checks label{display:flex;gap:8px;align-items:center;cursor:pointer}
 .grp{font-weight:600;color:#444;margin-top:10px;padding-bottom:2px}
@@ -267,12 +277,13 @@ button.spinning svg{animation:sp .8s linear infinite}
   </div>
   <div class="actions">
     <div class="act main"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/></svg></div>
-      <div class="body"><h3>Make clips</h3><p>Finds the kills in new demos, then records only the moments worth a clip.</p>
-      <button class="primary" id="go-clips" data-help="Find the kills in every new demo, then record each moment worth a clip. Runs in the background; every sound your PC plays ends up in the clips.">Make clips from new demos</button><div class="meta" id="clips-meta"></div></div></div>
+      <div class="body"><h3>Make clips</h3><p>Finds the kills in every demo in your folder that is not done yet, old ones too, then records only the moments worth a clip. To do only some demos, tick them in the list.</p>
+      <button class="primary" id="go-clips" data-help="Every demo in the folder that Killcam '99 has not done yet, however old: find the kills, then record each moment worth a clip. Runs in the background; every sound your PC plays ends up in the clips.">Make clips from all demos not done yet</button><div class="meta" id="clips-meta"></div></div></div>
     <div class="act"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div>
       <div class="body"><h3>Find kills</h3><p>Fast, nothing is recorded. Shows the moments per demo, so you can pick which to record.</p>
-      <div class="btnrow"><button id="go-scan" data-help="Play the new demos fast to find the kills. Nothing is recorded.">Find kills in new demos</button><button id="go-rescan" data-help="Look for kills in every demo again, also the ones done before.">Find kills in all demos again</button></div><div class="meta" id="scan-meta"></div></div></div>
+      <div class="btnrow"><button id="go-scan" data-help="Play every demo not looked at yet (old ones too) fast to find the kills. Nothing is recorded.">Find kills in demos not looked at yet</button><button id="go-rescan" data-help="Look for kills in every demo again, also the ones done before.">Find kills in all demos again</button></div><div class="meta" id="scan-meta"></div></div></div>
   </div>
+  <div class="compare" id="dcompare" hidden></div>
   <div class="bar">
     <input class="search" id="dq" placeholder="Search map or file name" data-help="Type part of a map or file name to narrow the list.">
     <div class="seg" id="dfilter"></div>
@@ -280,7 +291,7 @@ button.spinning svg{animation:sp .8s linear infinite}
     <button class="small ghost" data-refresh="demos" data-help="Read the demo folder and the results again."><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Refresh</button>
   </div>
   <div class="selbar" id="dsel"><b id="dseln"></b>
-    <button class="primary small" id="sel-clips">Make clips</button><button class="small" id="sel-scan">Find kills again</button><button class="small" id="sel-remove" data-help="Take the selected demos off the list. The .dem files stay where they are.">Remove from list</button>
+    <button class="primary small" id="sel-clips">Make clips</button><button class="small" id="sel-scan">Find kills again</button><button class="small" id="sel-remove" data-help="Take the selected demos off the list. The .dem files stay where they are.">Remove from list</button><button class="small" id="sel-putback" hidden data-help="Put the selected removed demos back on the list, so Make clips and Find kills include them again.">Put back</button>
     <div class="spacer"></div><button class="small ghost" id="sel-clear">Clear selection</button></div>
   <div class="selbar" id="msel"><b id="mseln"></b><span class="dim" id="mseldone"></span>
     <button class="primary small" id="msel-rec">Record these moments</button>
@@ -401,10 +412,10 @@ button.spinning svg{animation:sp .8s linear infinite}
     <div class="card"><h3>What makes a clip</h3><p class="sub">Your own announcer calls. Multi kills are counted from your kills; sprees come from the server.</p>
       <div class="grp">Multi kills</div><div class="checks" id="trg-multi"></div>
       <div class="grp">Sprees</div><div class="checks" id="trg-spree"></div></div>
-    <div class="card"><h3>Combos</h3><p class="sub">A multi kill followed by a flag play makes one longer clip.</p>
-      <div class="row"><input type="checkbox" data-setting="return_on" id="s-ret"><label for="s-ret">Multi Kill or higher, then you return your flag<span class="hint">within the seconds on the right</span></label><input type="number" min="1" max="120" data-setting="return_window"> s</div>
-      <div class="row"><input type="checkbox" data-setting="capture_on" id="s-cap"><label for="s-cap">Multi Kill or higher, then you capture<span class="hint">within the seconds on the right</span></label><input type="number" min="1" max="180" data-setting="capture_window"> s</div>
-      <div class="row"><input type="checkbox" data-setting="carrier_kills" id="s-fc"><label for="s-fc">Multi Kill or higher in which you kill the enemy flag carrier</label></div></div>
+    <div class="card"><h3>Combos</h3><p class="sub">A multi kill followed by a flag play makes one longer clip. Pick per flag play which multi kill it starts at; a lower one makes more clips. These are separate from the multi kills on the left.</p>
+      <div class="row combo-row" data-kind="return" data-rest=", then you return your flag" data-hint="within the seconds on the right"><input type="checkbox" data-setting="return_on" id="s-ret"><label for="s-ret"><select class="combo-from" aria-label="Flag return combo starts at" data-help="The lowest multi kill that counts for this combo; every higher one counts too. Multi Kill and Mega Kill make many combo clips."></select><span class="ct"></span><span class="hint"></span></label><input type="number" min="1" max="120" data-setting="return_window"> s</div>
+      <div class="row combo-row" data-kind="capture" data-rest=", then you capture" data-hint="within the seconds on the right"><input type="checkbox" data-setting="capture_on" id="s-cap"><label for="s-cap"><select class="combo-from" aria-label="Capture combo starts at" data-help="The lowest multi kill that counts for this combo; every higher one counts too. Multi Kill and Mega Kill make many combo clips."></select><span class="ct"></span><span class="hint"></span></label><input type="number" min="1" max="180" data-setting="capture_window"> s</div>
+      <div class="row combo-row" data-kind="carrier" data-rest=" in which you kill the enemy flag carrier" data-hint=""><input type="checkbox" data-setting="carrier_kills" id="s-fc"><label for="s-fc"><select class="combo-from" aria-label="Flag carrier kill combo starts at" data-help="The lowest multi kill that counts for this combo; every higher one counts too. Multi Kill and Mega Kill make many combo clips."></select><span class="ct"></span><span class="hint"></span></label></div></div>
   </div></div>
   <div class="page" id="op-length"><div class="cards">
     <div class="card"><h3>Clip length</h3><p class="sub">Around the kill streak that leads to the call.</p>
@@ -413,7 +424,8 @@ button.spinning svg{animation:sp .8s linear infinite}
       <div class="row"><label>Settle time after a jump<span class="hint">played but not kept, so picture and sound are calm when the clip starts</span></label><input type="number" min="0" max="10" step="0.5" data-setting="settle"> s</div></div>
     <div class="card"><h3>Output</h3><p class="sub">The clip files.</p>
       <div class="row"><label>File type</label><select data-setting="format"><option value="mp4">MP4 (plays everywhere)</option><option value="mkv">MKV</option></select></div>
-      <div class="row"><label>Quality<span class="hint">High is like the recording; Normal is about half the size</span></label><select data-setting="clip_quality"><option value="high">High</option><option value="normal">Normal</option><option value="small">Small</option></select></div></div>
+      <div class="row"><label>Quality<span class="hint">High is like the recording; Normal is about half the size</span></label><select data-setting="clip_quality"><option value="high">High</option><option value="normal">Normal</option><option value="small">Small</option></select></div>
+      <div class="row"><input type="checkbox" data-setting="smooth_retry" id="s-smooth"><label for="s-smooth">Record choppy moments again at the end of the queue<span class="hint">every clip is checked for stutter; turn off on a slow PC to save time</span></label></div></div>
   </div></div>
   <div class="page" id="op-speed"><div class="cards">
     <div class="card"><h3>Finding kills</h3><p class="sub">Demos are played fast without recording.</p>
@@ -427,8 +439,9 @@ button.spinning svg{animation:sp .8s linear infinite}
       <div class="row"><label>Demos<span class="hint mono" id="s-demofolder"></span></label><button class="small" data-pick="demo">Change</button></div>
       <div class="row"><label>Recordings<span class="hint mono" id="s-recfolder"></span></label><button class="small" data-pick="obs">Change</button></div>
       <div class="row"><label>Clips are saved in<span class="hint mono" id="s-outfolder"></span></label><button class="small" data-pick="out_now">Change</button><button class="small ghost" data-open="all_clips">Open</button></div></div>
-    <div class="card"><h3>Housekeeping</h3><p class="sub">Temporary recordings are kept until a clip is cut.</p>
-      <div class="row"><label>Delete temporary files<span class="hint" id="worksize"></span></label><button id="clean">Delete</button></div></div>
+    <div class="card"><h3>Housekeeping</h3><p class="sub">Temporary recordings are kept until a clip is cut. Scan results are what Find kills saved per demo.</p>
+      <div class="row"><label>Delete temporary files<span class="hint" id="worksize"></span></label><button id="clean">Delete</button></div>
+      <div class="row"><label>Delete all demo scans<span class="hint" id="scansize"></span></label><button class="danger" id="delscans" data-help="Start over: every demo goes back to Not looked at and is searched again by the next Make clips or Find kills. Your clips stay.">Delete scans</button></div></div>
   </div></div>
   <div class="page" id="op-game"><div class="cards">
     <div class="card"><h3>Unreal Tournament</h3><p class="sub" id="g-sub"></p>
@@ -444,6 +457,7 @@ button.spinning svg{animation:sp .8s linear infinite}
     <div class="card"><h3>This app</h3><p class="sub">How Killcam '99 itself behaves.</p>
       <div class="row"><input type="checkbox" data-setting="open_as_app" id="s-app"><label for="s-app">Open in its own window<span class="hint">without browser tabs and address bar (Microsoft Edge)</span></label></div>
       <div class="row"><input type="checkbox" data-setting="notify" id="s-not"><label for="s-not">Desktop notification when a job is done</label></div>
+      <div class="row"><input type="checkbox" data-setting="check_updates" id="s-upd"><label for="s-upd">Check for updates when Killcam '99 starts<span class="hint">one question to GitHub; nothing is downloaded without your click</span></label></div>
       <div class="row"><input type="checkbox" data-setting="dev_mode" id="s-dev"><label for="s-dev">Developer tools<span class="hint">extra checks that compare detection methods</span></label></div>
       <div class="row"><label>Back to the standard options<span class="hint">your folders and game setup are kept</span></label><button class="small danger" id="reset">Reset</button></div></div>
     <div class="card dev"><h3>Developer tools</h3><p class="sub">For testing the detection.</p>
@@ -464,6 +478,7 @@ button.spinning svg{animation:sp .8s linear infinite}
       <h3>Drop files on Killcam99.bat</h3><p class="sub">Demos are turned into clips; recordings are read for clips. The window does not have to be open.</p></div>
     <div class="card"><h3>About</h3><p class="sub" id="about"></p>
       <p class="sub">Not made by or affiliated with Epic Games. You need your own copy of Unreal Tournament with the OldUnreal 469 patch.</p>
+      <div class="row"><label>Updates<span class="hint" id="updhint"></span></label><button class="small" id="updnow" onclick="checkUpdate()" data-help="Ask GitHub whether a newer Killcam '99 is out. Nothing is downloaded without your click.">Check for updates</button></div>
       <div class="row"><label>Copy diagnostics<span class="hint">versions, folders, checks and the end of the log, for a bug report</span></label><button class="small" id="diag">Copy</button></div>
       <div class="row"><label>Log file</label><button class="small" data-open="log">Open</button></div>
       <div class="row"><label>Killcam '99 folder</label><button class="small" data-open="app">Open</button></div></div>
@@ -507,7 +522,7 @@ async function copyText(t,what){try{await navigator.clipboard.writeText(t);toast
 let S=null, DEMOS=null, RECS=null, CLIPS=null, JOB=null, logNext=0, jobId=null, tab="demos";
 const sel=new Set(); let dfilt="all", dsort=["when",-1], ccat="All";
 const TABS=["demos","recs","clips","packages","options","help"];
-const DEFHELP={demos:"Make clips finds the kills in new demos and records the moments worth a clip.",recs:"Clips from your OBS / Streamlabs recordings: no demo and no game needed.",
+const DEFHELP={demos:"Make clips finds the kills in every demo not done yet (whatever its date) and records the moments worth a clip.",recs:"Clips from your OBS / Streamlabs recordings: no demo and no game needed.",
  clips:"Watch a clip, then Keep or Reject it.",packages:"The exact map, mod and texture versions your demos need.",options:"Changes are saved right away and used by the next job.",help:"Press ` for the console, 1 to 6 to switch windows."};
 
 // ---------------- windows, page tabs, help line ----------------
@@ -530,18 +545,41 @@ async function loadState(){S=await get("/api/state");document.body.classList.tog
  $("#s-demofolder").textContent=S.settings.demo_folder;$("#s-recfolder").textContent=S.settings.obs_folder;$("#s-outfolder").textContent=S.clips;
  $("#jobs-hint").textContent=`Auto = ${S.auto_jobs} on this PC (${S.cpu_threads} CPU threads); more uses more CPU`;
  $("#worksize").textContent=`${size(S.health.work_bytes)} of temporary recordings`;
+ const sc=S.health.scans||{count:0,bytes:0};$("#scansize").textContent=sc.count?`${plural(sc.count,"saved scan")}, ${size(sc.bytes)}; every demo goes back to Not looked at`:"No demo has been searched yet";$("#delscans").disabled=!sc.count;
  $("#about").textContent=`${S.app.name} ${S.app.version}. Turns Unreal Tournament demos and recordings into kill clips.`}
 function drawHealthBadge(){const c=S.health.checks;const bad=c.some(x=>!x.ok&&!x.warn&&x.fix),warn=c.some(x=>x.warn||(!x.ok&&!x.fix));
  $("#healthdot").style.color=$("#healthdot").style.background=bad?"var(--bad)":warn?"var(--warn)":"var(--ok)";$("#healthtxt").textContent=bad?"Setup needed":warn?"Check setup":"All set"}
+// ---- updates (update.py; the latest GitHub release of fnlz-cybs/killcam99) ----
+async function startUpdate(){const i=(S.update||{}).info;if(!i||!i.asset)return;
+ const notes=(i.notes||"").split(/\r?\n/).map(s=>s.replace(/^[#*\-\s]+/,"").trim()).filter(Boolean).slice(0,6);
+ runJob("update",{},{title:`Update to Killcam '99 ${i.version}?`,ok:"Download",lines:[
+  `The release is downloaded from GitHub (${size(i.asset.size)}) and checked. You keep working meanwhile; when it is ready, one click restarts Killcam '99 with it.`,
+  "Your clips, settings, game copy and downloaded packages stay as they are.",...(notes.length?["What's new: "+notes.join(" · ")]:[])]})}
+async function applyUpdate(){const v=(S.update||{}).ready;
+ if(!await confirmDlg({title:`Install Killcam '99 ${v} now?`,ok:"Restart and update",lines:["Killcam '99 closes, puts the new version in place and opens again by itself (about half a minute). Your clips, settings and game copy stay."]}))return;
+ const r=await post("/api/update-apply");if(!r.ok){toast(r.error,4000,true);return}
+ CLOSED=true;document.body.innerHTML='<div class="empty" style="padding:60px;text-align:center">Updating Killcam \'99 ... it opens again by itself in a moment.</div>'}
+async function checkUpdate(){$("#updnow").disabled=true;const r=await post("/api/update-check");$("#updnow").disabled=false;
+ if(r.ok){S.update=r.update;drawUpdate();drawBanner()}}
+function drawUpdate(){const u=S.update||{},h=$("#updhint");if(!h)return;
+ h.textContent=!u.installed?`Version ${u.current}. Running from the source folder: update with git, not here.`
+  :u.ready?`Version ${u.current}; ${u.ready} is downloaded: Restart and update (banner at the top).`
+  :u.error&&!u.info?`Version ${u.current}. Could not ask GitHub (${u.error}).`
+  :u.info?(u.info.newer?`Version ${u.current}; ${u.info.version} is out.`:`Version ${u.current}, the newest.`)
+  :`Version ${u.current}. Not checked yet.`;
+ $("#updnow").hidden=!u.installed}
 function fixer(x){return x.fix=="wizard"?openWizard:x.fix=="setup"?()=>runJob("setup"):x.fix=="install"?()=>runJob("install"):null}
 function drawBanner(){const b=$("#banner");b.innerHTML="";const c=Object.fromEntries(S.health.checks.map(x=>[x.id,x]));
  const add=(cls,txt,btn,fn)=>b.append(el("div",{class:cls},el("span",{},txt),btn?el("button",{class:"small",onclick:fn},btn):null));
  if(S.code_changed)add("","Killcam '99 was updated after this window opened. Restart it to use the new version (takes a few seconds).","Restart now",restartApp);
+ const u=S.update||{};
+ if(u.ready)add("",`Killcam '99 ${u.ready} is downloaded and ready.`,"Restart and update",applyUpdate);
+ else if(u.installed&&u.info&&u.info.newer&&!(JOB&&JOB.kind=="update"&&JOB.state=="running"))add("",`Killcam '99 ${u.info.version} is out (you have ${u.current}).`,"Update now",startUpdate);
  if(!c.build.ok)add("bad","Unreal Tournament is not set up yet. Nothing can be found or recorded until it is.","Open setup",openWizard);
  else if(c.hook.warn)add("","A newer kill detection add-on came with this version. Update it once.","Update",()=>runJob("setup"));
  else if(!c.hook.ok)add("bad","The kill detection add-on is not in the game folder.","Put it in place",()=>runJob("setup"));
  if(!c.ffmpeg.ok)add("bad","ffmpeg is missing: nothing can be recorded or cut.","Download ffmpeg",()=>runJob("install"))}
-function drawHealth(){if(!S)return;const h=$("#hlist");h.innerHTML="";for(const x of S.health.checks){const cls=x.ok&&!x.warn?"ok":(x.warn||!x.fix)?"warn":"bad";const f=fixer(x);
+function drawHealth(){if(!S)return;drawUpdate();const h=$("#hlist");h.innerHTML="";for(const x of S.health.checks){const cls=x.ok&&!x.warn?"ok":(x.warn||!x.fix)?"warn":"bad";const f=fixer(x);
  h.append(el("div",{class:"row"},el("span",{class:"st "+cls,html:cls=="ok"?ICON.check:cls=="warn"?ICON.warn:ICON.x}),el("label",{},x.label,el("span",{class:"hint"},x.detail)),
  (!x.ok||x.warn)&&f?el("button",{class:"small",onclick:f},x.fix=="wizard"?"Open setup":x.fix=="setup"?"Update":"Download"):null))}}
 function drawBadges(){const n=S.clips_new;$("#b-clips").hidden=!n;$("#b-clips").textContent=n+" new"}
@@ -612,30 +650,38 @@ document.addEventListener("keydown",e=>{if(e.ctrlKey||e.altKey||e.metaKey||$$(".
 // ---------------- demos ----------------
 const DSTAT={new:["Not looked at","pill blue"],incomplete:["Look again","pill bad"],nothing:["No moments","pill"],todo:["To record","pill todo"],partly:["Partly recorded","pill todo"],done:["Recorded","pill ok"]};
 const LOADED={};function stamp_(k){LOADED[k]=Date.now()}
-async function loadDemos(){const d=await get("/api/demos");DEMOS=d;stamp_("demos");drawDemos();if(d.maps_pending)setTimeout(()=>{if(tab=="demos")loadDemos()},6000)}
+let demosReq=0;  // only the newest answer is drawn (an older, slower one must not overwrite it)
+async function loadDemos(){const n=++demosReq,d=await get("/api/demos");if(n!=demosReq)return;DEMOS=d;stamp_("demos");drawDemos();if(d.maps_pending)setTimeout(()=>{if(tab=="demos")loadDemos()},6000)}
 function demoFilters(){const c={all:0,new:0,todo:0,done:0,nothing:0,miss:0,removed:0};for(const x of DEMOS.demos){if(x.removed){c.removed++;continue}c.all++;if(x.missing)c.miss++;if(x.status=="new"||x.status=="incomplete")c.new++;else if(x.status=="todo"||x.status=="partly")c.todo++;else if(x.status=="done")c.done++;else c.nothing++}
- const f=$("#dfilter");f.innerHTML="";for(const[k,l]of[["all","All"],["new","Not looked at"],["todo","To record"],["done","Recorded"],["nothing","No moments"],["miss","Packages missing"],["removed","Removed"]])
-  if((k!="miss"||c.miss)&&(k!="removed"||c.removed))f.append(el("button",{class:dfilt==k?"on":"",onclick:()=>{dfilt=k;drawDemos()}},l,el("span",{class:"n"},c[k])));
+ c.changed=DEMOS.demos.filter(x=>x.compare&&!x.removed).length;if(dfilt=="changed"&&!c.changed)dfilt="all";
+ const f=$("#dfilter");f.innerHTML="";for(const[k,l]of[["all","All"],["new","Not looked at"],["todo","To record"],["done","Recorded"],["nothing","No moments"],["changed","Changed"],["miss","Packages missing"],["removed","Removed"]])
+  if((k!="miss"||c.miss)&&(k!="removed"||c.removed)&&(k!="changed"||c.changed))f.append(el("button",{class:dfilt==k?"on":"",onclick:()=>{dfilt=k;drawDemos()}},l,el("span",{class:"n"},c[k])));
  const todo=c.todo,neu=c.new;$("#b-demos").hidden=!(todo+neu);$("#b-demos").textContent=todo+neu;
  $("#wt-demos").textContent=`- ${plural(c.all,"demo")}`;
- $("#clips-meta").textContent=neu||todo?`${neu} not looked at yet, ${todo} with moments still to record.`:"Everything is recorded. New demos show up here.";
+ $("#clips-meta").textContent=neu||todo?`${neu} not looked at yet, ${todo} with moments still to record.`:"Everything is recorded. Demos you add to the folder show up here.";
  $("#scan-meta").textContent=neu?`${plural(neu,"demo")} not looked at yet.`:"Every demo has been looked at.";return c}
 function drawDemos(){if(!DEMOS)return;const tb=$("#dbody");tb.innerHTML="";
- if(DEMOS.error){tb.append(el("tr",{},el("td",{colspan:7,class:"empty"},DEMOS.error)));return}demoFilters();
+ if(DEMOS.error){tb.append(el("tr",{},el("td",{colspan:7,class:"empty"},DEMOS.error)));return}demoFilters();drawCompare();
  const q=$("#dq").value.toLowerCase();if(dfilt=="removed"&&!DEMOS.demos.some(x=>x.removed))dfilt="all";
  let rows=DEMOS.demos.filter(x=>(!q||(x.name+" "+x.map).toLowerCase().includes(q))&&(dfilt=="removed"?x.removed:!x.removed)&&
-  (dfilt=="all"||dfilt=="removed"||(dfilt=="new"&&(x.status=="new"||x.status=="incomplete"))||(dfilt=="todo"&&(x.status=="todo"||x.status=="partly"))||(dfilt=="done"&&x.status=="done")||(dfilt=="nothing"&&x.status=="nothing")||(dfilt=="miss"&&x.missing)));
+  (dfilt=="all"||dfilt=="removed"||(dfilt=="changed"&&x.compare)||(dfilt=="new"&&(x.status=="new"||x.status=="incomplete"))||(dfilt=="todo"&&(x.status=="todo"||x.status=="partly"))||(dfilt=="done"&&x.status=="done")||(dfilt=="nothing"&&x.status=="nothing")||(dfilt=="miss"&&x.missing)));
  const [k,dir]=dsort;rows.sort((a,b)=>{const va=a[k]??"",vb=b[k]??"";return(va>vb?1:va<vb?-1:0)*dir});
  $("#dcount").textContent=plural(rows.length,"demo");
  if(!rows.length)tb.append(el("tr",{},el("td",{colspan:7,class:"empty"},DEMOS.demos.length?"No demos match this filter.":"No demos in this folder. Pick the folder with your .dem files.")));
  for(const x of rows){const[d,t]=fdate(x.when);const st=DSTAT[x.status]||[x.status,"pill"];
   const cb=el("input",{type:"checkbox"});cb.checked=sel.has(x.path);cb.onchange=()=>{cb.checked?sel.add(x.path):sel.delete(x.path);tr.classList.toggle("sel",cb.checked);drawSel()};
-  const moms=el("div",{class:"moments"},...x.moments.map(m=>{const k=x.path+"|"+m.t,on=MSEL.has(k);
+  const chips=x.moments.map(m=>{const k=x.path+"|"+m.t,on=MSEL.has(k);
    const eye=el("span",{class:"eye",title:"Watch this moment in the game",html:ICON.eye,onclick:e=>{e.stopPropagation();runJob("watch",{demo:x.path,at:m.t})}});
-   return el("span",{class:"mom"+(m.done?" done":"")+(on?" picked":""),"data-help":`${m.labels.join(" + ")} at ${dur(m.t)} (${dur(m.a)} to ${dur(m.b)}). `+(m.done?"Already recorded; pick it to record it again.":"Click to pick it for recording."),
+   const cmp=m.new?" New since the comparison started.":m.was?` Was: ${m.was.join(" + ")}.`:"";
+   return[m.t,el("span",{class:"mom"+(m.done?" done":"")+(on?" picked":"")+(m.new?" isnew":""),"data-help":`${m.labels.join(" + ")} at ${dur(m.t)} (${dur(m.a)} to ${dur(m.b)}). `+(m.done?"Already recorded; pick it to record it again.":"Click to pick it for recording.")+cmp,
     onclick:()=>{on?MSEL.delete(k):MSEL.set(k,{path:x.path,t:m.t,done:m.done});drawDemos()}},
-    el("span",{class:"pk"},on?"✓":""),el("span",{class:"t"},dur(m.t)),el("b",{},m.labels.join(" + ")),m.done?el("span",{class:"ok"},"✓"):null,eye)}));
-  if(!x.moments.length)moms.append(el("span",{class:"dim2"},x.status=="new"?"find kills to see them":x.status=="incomplete"?"find kills again":"none"));
+    el("span",{class:"pk"},on?"✓":""),el("span",{class:"t"},dur(m.t)),el("b",{},m.labels.join(" + ")),m.done?el("span",{class:"ok"},"✓"):null,
+    m.new?el("span",{class:"newtag"},"NEW"):null,m.was?el("span",{class:"was"},"was: "+m.was.join(" + ")):null,eye)]});
+  for(const m of(x.compare&&x.compare.removed)||[])  // in the earlier results, not any more
+   chips.push([m.t,el("span",{class:"mom gone","data-help":`${m.labels.join(" + ")} at ${dur(m.t)} was a moment before the comparison started; with the current options it is not.`+(m.done?" Its clip stays in Clips.":"")},
+    el("span",{class:"t"},dur(m.t)),el("b",{},m.labels.join(" + ")),m.done?el("span",{class:"ok"},"✓"):null,el("span",{class:"gonetag"},"no longer a clip"))]);
+  const moms=el("div",{class:"moments"},...chips.sort((p,q)=>p[0]-q[0]).map(p=>p[1]));
+  if(!chips.length)moms.append(el("span",{class:"dim2"},x.status=="new"?"find kills to see them":x.status=="incomplete"?"find kills again":"none"));
   const tr=el("tr",{class:sel.has(x.path)?"sel":""},el("td",{class:"cb"},cb),el("td",{class:"when"},d,el("small",{},t)),
    el("td",{},x.map||el("span",{class:"dim2"},DEMOS.maps_pending?"finding ...":"?"),el("small",{class:"dim2",style:"display:block;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap",title:x.name},x.name)),
    el("td",{class:"mono"},dur(x.length)),el("td",{},moms),
@@ -646,7 +692,22 @@ function drawDemos(){if(!DEMOS)return;const tb=$("#dbody");tb.innerHTML="";
      :el("button",{class:"small ghost","data-help":"Take this demo off the list. The .dem file stays where it is; Removed brings it back.",onclick:()=>removeDemos([x.name])},ic("x"),"Remove")));
   tb.append(tr)}
  $("#dall").checked=rows.length&&rows.every(x=>sel.has(x.path));$("#dall").onchange=e=>{for(const x of rows)e.target.checked?sel.add(x.path):sel.delete(x.path);drawDemos()};drawSel()}
+// The comparison bar: results now against the ones saved before the clip options changed (or kills
+// were found again). Keep closes it; Undo puts the options back (only after an options change).
+function drawCompare(){const box=$("#dcompare"),c=DEMOS&&DEMOS.compare,diff=!!c&&(c.added||c.removed||c.changed);box.hidden=!diff;box.innerHTML="";if(!diff)return;
+ const[d,t]=fdate(c.time),sep=()=>document.createTextNode(" · "),nums=el("span",{class:"nums"},`${plural(c.now,"moment")}, was ${c.before}`);
+ for(const[n,cls,txt]of[[c.added,"plus",`+${c.added} new`],[c.removed,"minus",`−${c.removed} no longer a clip`],[c.changed,"chg",`${c.changed} changed`]])if(n)nums.append(sep(),el("span",{class:cls},txt));
+ nums.append(sep(),`in ${plural(c.demos,"demo")}`);
+ box.append(el("div",{class:"what"},el("b",{},`Results changed since ${t}`),` (${c.reason=="rescan"?"you found kills again":c.reason=="cleared"?"you deleted the scans and searched again":"you changed the clip options"}, ${d})`,nums),
+  el("button",{class:"small","data-help":"Show only the demos whose moments changed.",onclick:()=>{dfilt=dfilt=="changed"?"all":"changed";drawDemos()}},dfilt=="changed"?"Show all demos":"Show changed demos"),
+  c.reason=="options"?el("button",{class:"small","data-help":"Put the clip options back as they were when the comparison started.",onclick:()=>closeCompare("undo")},"Undo changes"):null,
+  el("button",{class:"small primary","data-help":"Accept these results; the marks go away.",onclick:()=>closeCompare("keep")},"Keep new results"))}
+async function closeCompare(action){const r=await post("/api/compare",{action});if(!r.ok){toast(r.error||"That did not work",4000,true);return}
+ S.settings=r.settings;fillSettings();if(dfilt=="changed")dfilt="all";toast(action=="undo"?"Clip options are back as they were":"Kept the new results",2600);await loadDemos()}
+function selRemoved(){const byPath=new Map(((DEMOS&&DEMOS.demos)||[]).map(x=>[x.path,x]));return[...sel].filter(p=>(byPath.get(p)||{}).removed)}
 function drawSel(){const n=sel.size;$("#dsel").classList.toggle("on",n>0);$("#dseln").textContent=`${plural(n,"demo")} selected`;
+ const gone=selRemoved().length;$("#sel-putback").hidden=!gone;$("#sel-putback").textContent=gone==n?"Put back":`Put back ${gone}`;
+ $("#sel-remove").hidden=gone==n;$("#sel-remove").textContent=gone?`Remove ${n-gone} from list`:"Remove from list";
  const ms=[...MSEL.values()],nd=new Set(ms.map(m=>m.path)).size,done=ms.filter(m=>m.done).length;$("#msel").classList.toggle("on",ms.length>0);
  $("#mseln").textContent=`${plural(ms.length,"moment")} picked in ${plural(nd,"demo")}`;$("#mseldone").textContent=done?`(${done} already recorded: recorded again)`:""}
 const MSEL=new Map();
@@ -659,12 +720,14 @@ $$("th.sort[data-sort]").forEach(th=>th.onclick=()=>{const k=th.dataset.sort;dso
 $("#dq").oninput=drawDemos;$("#sel-clear").onclick=()=>{sel.clear();drawDemos()};
 $("#sel-clips").onclick=()=>runJob("clips",{demos:[...sel]},{title:`Make clips from ${plural(sel.size,"demo")}?`,lines:["Demos not looked at yet are played fast first to find the kills. Then only the moments worth a clip are recorded.","Every sound your PC plays while recording ends up in the clips."],ok:"Make clips"});
 $("#sel-scan").onclick=()=>runJob("scan",{demos:[...sel]});
-$("#sel-remove").onclick=()=>removeDemos([...sel].map(p=>p.split(/[\\/]/).pop()));
+$("#sel-remove").onclick=()=>{const gone=new Set(selRemoved());removeDemos([...sel].filter(p=>!gone.has(p)).map(p=>p.split(/[\\/]/).pop()))};
+$("#sel-putback").onclick=()=>removeDemos(selRemoved().map(p=>p.split(/[\\/]/).pop()),true);
 async function removeDemos(names,putBack=false){const r=await post("/api/demo-remove",{names,put_back:putBack});if(!r.ok){toast(r.error,4000,true);return}
- if(!putBack){for(const p of[...sel])if(names.includes(p.split(/[\\/]/).pop()))sel.delete(p);for(const[k,m]of[...MSEL])if(names.includes(m.path.split(/[\\/]/).pop()))MSEL.delete(k)}
+ for(const p of[...sel])if(names.includes(p.split(/[\\/]/).pop()))sel.delete(p);  // they leave this view either way
+ if(!putBack)for(const[k,m]of[...MSEL])if(names.includes(m.path.split(/[\\/]/).pop()))MSEL.delete(k);
  toast(putBack?`${plural(names.length,"demo")} back on the list`:`${plural(names.length,"demo")} removed from the list. The files are untouched; see Removed to put them back.`,putBack?2600:4500);
  await loadDemos();LIBD=null}
-$("#go-clips").onclick=()=>{const c=demoFilters();runJob("clips",{},{title:"Make clips from new demos?",lines:[`${plural(c.new,"demo")} are played fast first to find the kills; then the moments worth a clip are recorded (${c.todo} demos already have moments waiting).`,"Recording runs in the background, but every sound your PC plays ends up in the clips. Don't minimise the game window."],ok:"Make clips"})};
+$("#go-clips").onclick=()=>{const c=demoFilters();runJob("clips",{},{title:"Make clips from all demos not done yet?",lines:[`${plural(c.new,"demo")} are played fast first to find the kills; then the moments worth a clip are recorded (${c.todo} demos already have moments waiting).`,"This is every demo in your folder not done yet, old ones too. To do only some, tick them in the list and use Make clips there.","Recording runs in the background, but every sound your PC plays ends up in the clips. Don't minimise the game window."+(S.settings.smooth_retry?" Choppy moments are recorded once more at the end, with the game window in front.":"")],ok:"Make clips"})};
 $("#go-scan").onclick=()=>runJob("scan");
 $("#go-rescan").onclick=()=>{const n=DEMOS?DEMOS.demos.length:0,secs=DEMOS?DEMOS.demos.reduce((t,x)=>t+(x.length||0),0):0;
  const jobs=+S.settings.scan_jobs||S.auto_jobs||1,speed=Math.min(+S.settings.scan_speed||40,30);
@@ -754,7 +817,7 @@ function drawClips(){if(!CLIPS)return;const items=CLIPS.items;const g=$("#cgrid"
  if(!list.length){g.append(el("div",{class:"empty",style:"grid-column:1/-1"},items.length?"No clips match these filters.":"No clips yet. Make some in Demos or Recordings."));return}
  for(const x of list){const card=el("div",{class:"clip "+(x.status||"")});
   const v=x.playable?el("video",{controls:true,preload:"metadata",src:"/media/"+x.id+"?t="+TOKEN}):el("div",{class:"noplay"},el("button",{onclick:()=>post("/api/clip-open",{id:x.id,play:true})},ic("play"),"Play in your video player"));
-  const b=el("div",{class:"b"},el("div",{class:"cat"},x.category),el("div",{class:"t"},(x.labels||[]).join(" + ")),el("div",{class:"m"},`${x.origin} at ${x.stamp}`),x.check?el("div",{class:x.warn?"w":"q"},x.check):null);
+  const b=el("div",{class:"b"},el("div",{class:"cat"},x.category),el("div",{class:"t"},(x.labels||[]).join(" + "),x.choppy?el("span",{class:"pill bad",style:"margin-left:6px","data-help":"This moment stuttered in every recording; the smoothest one is kept. See the line below."},"Choppy"):null),el("div",{class:"m"},`${x.origin} at ${x.stamp}`),x.check?el("div",{class:x.warn?"w":"q"},x.check):null);
   const set=s=>post("/api/clip-status",{id:x.id,status:s}).then(r=>{if(r.ok){x.status=r.status;drawClips();loadState()}else toast(r.error,4000,true)});
   const a=el("div",{class:"a"},el("button",{class:"small",onclick:()=>set("kept")},ic("check"),x.status=="kept"?"Kept":"Keep"),
    el("button",{class:"small",onclick:()=>set(x.status=="rejected"?"new":"rejected")},ic("x"),x.status=="rejected"?"Restore":"Reject"),
@@ -827,17 +890,31 @@ $("#go-addsrc").onclick=addSource;$("#go-addsrc2").onclick=addSource;
 // ---------------- options ----------------
 let audioLoaded=false;
 function fillSettings(){if(!S)return;const st=S.settings;
- for(const g of["multi","spree"]){const box=$("#trg-"+g);box.innerHTML="";for(const t of S.triggers.filter(t=>t.group==g)){const c=el("input",{type:"checkbox"});c.checked=st.triggers.includes(t.key);
-  c.onchange=()=>{const set=new Set(S.settings.triggers);c.checked?set.add(t.key):set.delete(t.key);saveSetting("triggers",[...set])};box.append(el("label",{},c,t.label))}}
+ const checks=(box,list,key)=>{box.innerHTML="";for(const t of list){const c=el("input",{type:"checkbox"});c.checked=st[key].includes(t.key);
+  c.onchange=()=>{const set=new Set(S.settings[key]);c.checked?set.add(t.key):set.delete(t.key);saveSetting(key,[...set])};box.append(el("label",{},c,t.label))}};
+ for(const g of["multi","spree"])checks($("#trg-"+g),S.triggers.filter(t=>t.group==g),"triggers");
  $$("[data-setting]").forEach(i=>{const k=i.dataset.setting,v=st[k];if(i.type=="checkbox")i.checked=!!v;else i.value=v??""});
+ drawComboRows();
  if(!audioLoaded)loadAudio(false)}
+// Combo rows: each flag play starts at a multi kill of its own; that one and every higher one count
+// (combo_set in killcam_app.py). Separate from the multi kills under "What makes a clip".
+function drawComboRows(){if(!S)return;const st=S.settings,K=S.combo_kills,top=K[K.length-1].key;
+ for(const row of $$(".combo-row")){const key=row.dataset.kind+"_from",sel=row.querySelector("select"),cb=row.querySelector("input[type=checkbox]"),num=row.querySelector("input[type=number]");
+  if(!sel.options.length)for(const t of K)sel.append(el("option",{value:t.key},t.label));sel.value=st[key];
+  sel.onchange=()=>{saveSetting(key,sel.value);drawComboRows()};
+  row.querySelector(".ct").textContent=(sel.value!=top?" or higher":"")+row.dataset.rest;
+  row.querySelector(".hint").textContent=row.dataset.hint;
+  sel.disabled=!cb.checked;if(num)num.disabled=!cb.checked;
+  if(!cb.dataset.combo){cb.dataset.combo=1;cb.addEventListener("change",()=>drawComboRows())}}}
 async function loadAudio(refresh){audioLoaded=true;const s=$("#audiodev");const r=await get("/api/audio"+(refresh?"?refresh=1":""));const cur=S.settings.audio_device;
  s.innerHTML="";s.append(el("option",{value:""},"Windows default output"));for(const d of r.devices)s.append(el("option",{value:d},d));
  if(cur&&!r.devices.includes(cur))s.append(el("option",{value:cur},cur+" (not found now)"));s.value=cur;if(refresh)toast(plural(r.devices.length,"sound device")+" found")}
 $("#audiorefresh").onclick=()=>loadAudio(true);
-let saveT=null;async function saveSetting(k,v){S.settings[k]=v;const r=await post("/api/settings",{values:{[k]:v}});if(r.ok){S.settings=r.settings;clearTimeout(saveT);saveT=setTimeout(()=>toast("Saved"),250);
- if(k=="dev_mode")document.body.classList.toggle("dev",!!v);
- if(["triggers","return_on","return_window","capture_on","capture_window","carrier_kills","part_before","part_after"].includes(k))DEMOS=null}}
+// several values go in one request: the server saves each request as a whole (read, change, write)
+let saveT=null;async function saveSettings(vals){Object.assign(S.settings,vals);const r=await post("/api/settings",{values:vals});if(r.ok){S.settings=r.settings;clearTimeout(saveT);saveT=setTimeout(()=>toast("Saved"),250);
+ const ks=Object.keys(vals);if(ks.includes("dev_mode"))document.body.classList.toggle("dev",!!vals.dev_mode);
+ if(ks.some(k=>["triggers","return_from","capture_from","carrier_from","return_on","return_window","capture_on","capture_window","carrier_kills","part_before","part_after"].includes(k))){DEMOS=null;if(tab=="demos")loadDemos()}}}
+function saveSetting(k,v){return saveSettings({[k]:v})}
 $$("[data-setting]").forEach(i=>i.onchange=()=>saveSetting(i.dataset.setting,i.type=="checkbox"?i.checked:i.value));
 $("#reset").onclick=async()=>{if(await confirmDlg({title:"Back to the standard options?",lines:["Your folders and game setup are kept."],ok:"Reset",danger:true})){const r=await post("/api/reset-settings");S.settings=r.settings;fillSettings();toast("Options reset")}};
 $("#g-wizard").onclick=()=>openWizard();
@@ -854,6 +931,14 @@ $$("[data-pick]").forEach(b=>b.onclick=async()=>{toast("A folder window opened (
 $$("[data-open]").forEach(b=>b.onclick=()=>post("/api/open",{what:b.dataset.open}));
 $$("[data-job]").forEach(b=>b.onclick=()=>runJob(b.dataset.job));
 $("#clean").onclick=async()=>{const r=await post("/api/clean");if(r.ok){toast(`Freed ${size(r.freed)}`);loadState()}else toast(r.error,4000,true)};
+$("#delscans").onclick=async()=>{const n=(S.health.scans||{}).count||0;
+ if(JOB&&JOB.state=="running"){toast("Not while a job runs. Stop it or wait until it is done.",4000,true);return}
+ if(!await confirmDlg({title:`Delete all ${plural(n,"saved demo scan")}?`,danger:true,ok:"Delete scans",lines:[
+  "Every demo goes back to Not looked at. The next Make clips or Find kills searches all of them again, which takes a while with many demos.",
+  "Your clips stay, and moments that were already recorded are not recorded again. Readings of your OBS recordings are not touched.",
+  "This cannot be undone, but once the demos are searched again the Demos page shows what changed compared with the results you have now."]}))return;
+ const r=await post("/api/delete-scans");if(!r.ok){toast(r.error,4000,true);return}
+ toast(`Deleted ${plural(r.deleted,"scan")} (${size(r.freed)}). Every demo is Not looked at again.`,4000);DEMOS=null;loadState()};
 $("#diag").onclick=async()=>{const t=await (await fetch("/api/diagnostics",{headers:TOKHDR})).text();copyText(t,"Diagnostics")};
 async function restartApp(){if(JOB&&JOB.state=="running"){toast("Wait until the job is done.");return}
  const r=await post("/api/restart");if(!r.ok){toast(r.error,4000,true);return}CLOSED=true;
